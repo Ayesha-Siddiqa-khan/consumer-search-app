@@ -1,0 +1,11 @@
+I have made updates to the application. Please recompile the Flutter project and generate an updated single-file Windows installer:
+
+1. Rebuild Flutter Release:
+   - Run: `flutter build windows --release`
+   - Ensure the updated code and assets are built cleanly into `build/windows/x64/runner/Release/`.
+
+
+2. Re-compile Installer:
+   - Run Inno Setup compiler (`iscc installer.iss`) to overwrite and generate the updated single installer:
+     `installer_output/eLGCDD_Consumer_Search_Engine_Setup.exe`
+
