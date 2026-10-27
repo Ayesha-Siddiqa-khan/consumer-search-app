@@ -44,7 +44,9 @@ class BillingCoverage {
   });
 
   int get missingBillCount => missingPeriods.length;
-  int? get estimatedMissingFee => monthlyWaterRate == null
+  int? get estimatedMissingFee => missingPeriods.isEmpty
+      ? 0
+      : monthlyWaterRate == null
       ? null
       : missingPeriods.fold<int>(0, (sum, gap) => sum + gap.estimatedFee!);
 
@@ -74,7 +76,7 @@ class BillingCoverage {
     final lines = <String>[];
     if (!hasRecordedHistory) {
       lines.add(
-        'No regular bill history is available. The periods below are absent from the import; issuance is unconfirmed.',
+        'No generated bill history is available. Missing-session estimates are not calculated.',
       );
     }
     if (missingPeriods.isNotEmpty) {
@@ -152,6 +154,19 @@ BillingCoverage buildBillingCoverage({
   required List<({int start, int end})> schedule,
   required String category,
 }) {
+  if (bills.isEmpty) {
+    return BillingCoverage(
+      missingPeriods: const [],
+      shortFees: const [],
+      undatedBills: const [],
+      monthlyWaterRate: null,
+      expectedWaterFee: 0,
+      variableRates: false,
+      standardRateEstimate: false,
+      checkedThrough: DateTime.utc(2023, 7, 1),
+      hasRecordedHistory: false,
+    );
+  }
   final covered = <int>{};
   final undated = <String>[];
   final rates = <int>{};

@@ -119,7 +119,9 @@ class _BillHistoryDialogState extends State<BillHistoryDialog> {
             )
           : audit;
       final selectedCheck =
-          widget.auditPeriodFrom != null && widget.auditPeriodTo != null
+          widget.auditPeriodFrom != null &&
+              widget.auditPeriodTo != null &&
+              (selectedAudit.firstOrNull?.billCount ?? 0) > 0
           ? checkAuditPeriod(
               selectedAudit.firstOrNull?.periodBills ?? [],
               widget.auditPeriodFrom!,

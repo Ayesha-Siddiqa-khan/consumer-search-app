@@ -147,9 +147,13 @@ void main() {
     expect(result.coverage!.expectedWaterFee, 3360000);
     expect(result.coverage!.estimatedMissingFee, 480000);
     final empty = audit([]).coverage!;
-    expect(empty.missingBillCount, 10);
-    expect(empty.estimatedMissingFee, 1680000);
-    expect(empty.standardRateEstimate, true);
+    expect(empty.hasRecordedHistory, false);
+    expect(empty.missingBillCount, 0);
+    expect(empty.estimatedMissingFee, 0);
+    expect(empty.estimatedMissingAmount, 0);
+    expect(empty.expectedWaterFee, 0);
+    expect(empty.hasWarning, false);
+    expect(empty.standardRateEstimate, false);
   });
 
   test(
@@ -205,6 +209,59 @@ void main() {
       expect(before.expectedWaterFee, 1040000);
       expect(before.hasWarning, false);
       expect(before.checkedThrough, DateTime.utc(2025, 8, 31));
+    },
+  );
+
+  testWidgets(
+    'empty history has no missing-session warning or estimated charges',
+    (tester) async {
+      late Database db;
+      await tester.runAsync(() async {
+        db = await fixture(inMemoryDatabasePath);
+        await db.insert('consumers', {
+          'connection_no': '0010010002',
+          'rate_type': 'DOMESTIC',
+        });
+      });
+      addTearDown(db.close);
+      await tester.binding.setSurfaceSize(const Size(1500, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: BillHistoryDialog(
+              initialConnectionNo: '0010010002',
+              database: DatabaseService.forTesting(db),
+              auditPeriodFrom: DateTime(2026, 1, 1),
+              auditPeriodTo: DateTime(2026, 6, 30),
+            ),
+          ),
+        ),
+      );
+      for (
+        var i = 0;
+        i < 30 &&
+            find.textContaining('No bill history found').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump();
+      }
+      await tester.pumpAndSettle();
+      expect(find.textContaining('No bill history found'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('billing-coverage-warning')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('selected-audit-period-coverage')),
+        findsNothing,
+      );
+      expect(find.textContaining('Missing bills:'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
     },
   );
 
@@ -614,19 +671,25 @@ void main() {
       late Database db;
       await tester.runAsync(() async {
         db = await fixture(inMemoryDatabasePath);
-        for (final id in ['POS', 'ZERO', 'UNKNOWN']) {
+        for (final id in ['POS', 'ZERO', 'UNKNOWN', 'EMPTY']) {
           await db.insert('consumers', {
             'connection_no': id,
             'consumer_name': 'Consumer $id',
             'connection_status': 'Regular Connection',
             'rate_type': 'DOMESTIC',
           });
-          if (id == 'ZERO') continue;
+          if (id == 'EMPTY') continue;
           final bills = history(omit: {3});
           bills.singleWhere((b) => b['bill_no'] == '107').addAll({
             'water_fee': '0',
             'total_bill': '0',
           });
+          if (id == 'ZERO') {
+            for (final bill in bills) {
+              bill['status'] = 'Paid';
+              bill['amount_received'] = bill['water_fee'];
+            }
+          }
           if (id == 'UNKNOWN') bills.last['amount_received'] = 'invalid';
           for (final bill in bills) {
             await db.insert('bill_history', {...bill, 'connection_no': id});
@@ -680,6 +743,7 @@ void main() {
       await choose('All results', 'Missing amounts');
       expect(find.text('Consumer POS'), findsOneWidget);
       expect(find.text('Consumer ZERO'), findsOneWidget);
+      expect(find.text('Consumer EMPTY'), findsNothing);
       expect(find.text('Consumer UNKNOWN'), findsOneWidget);
       await choose('All water balances', 'Water balance outstanding');
       expect(find.text('Consumer POS'), findsOneWidget);
@@ -711,9 +775,9 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(DataTable),
-          matching: find.text('Rs. 16,800'),
+          matching: find.text('Rs. 3,600'),
         ),
-        findsNWidgets(3),
+        findsOneWidget,
       );
       await tester.tap(find.text('Export PDF / choose columns'));
       await tester.pumpAndSettle();
@@ -760,7 +824,6 @@ void main() {
             'rate_type': 'DOMESTIC',
             'connection_status': 'Regular Connection',
           });
-          if (entry.key == 'ZERO') continue;
           await db.insert(
             'bill_history',
             BillHistory(

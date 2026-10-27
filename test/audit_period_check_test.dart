@@ -415,7 +415,8 @@ void main() {
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       await choose('All sessions complete', 'Missing / incomplete sessions');
-      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 4);
+      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 3);
+      expect(find.text('Consumer NONE'), findsNothing);
       expect(find.text('Consumer COMPLETE'), findsNothing);
       final detailsButton = find.text('View session details').first;
       await tester.ensureVisible(detailsButton);
@@ -451,7 +452,21 @@ void main() {
       await choose('All period results', 'Period present');
       expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 3);
       await choose('Period present', 'Period missing / incomplete');
-      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 2);
+      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 1);
+      expect(find.text('Consumer NONE'), findsNothing);
+      expect(find.text('Consumer MISSING'), findsOneWidget);
+      await tester.ensureVisible(find.text('Export PDF / choose columns'));
+      await tester.tap(find.text('Export PDF / choose columns'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<BillingAuditPdfDialog>(find.byType(BillingAuditPdfDialog))
+            .entries
+            .map((e) => e.connectionNo),
+        ['MISSING'],
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
       await choose('Period missing / incomplete', 'All period results');
       await tester.ensureVisible(
         find.byKey(const ValueKey('audit-amount-threshold')),
