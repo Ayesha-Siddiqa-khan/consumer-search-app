@@ -324,6 +324,9 @@ void main() {
         await tester.pump(const Duration(milliseconds: 30));
       }
       await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('audit-period-from')), findsOneWidget);
+      await tester.tap(find.text('Billing period, sessions & amount filters'));
+      await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('audit-period-from')), findsNothing);
       await tester.tap(find.text('Billing period, sessions & amount filters'));
       await tester.pumpAndSettle();

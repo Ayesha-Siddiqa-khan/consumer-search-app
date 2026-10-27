@@ -35,6 +35,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   List<BillingAuditEntry> _entries = [];
   bool _loading = true;
   bool _exporting = false;
+  bool _periodFiltersExpanded = true;
   String? _error;
   int _page = 0;
   int _pageSize = 20;
@@ -155,9 +156,17 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   /// Cost of the billing periods the result review reports as missing.
   int? _missingBillAmount(BillingAuditEntry entry) {
     final coverage = entry.coverage;
-    if (coverage == null) return null;
-    return coverage.missingPeriods.isEmpty ? 0 : coverage.estimatedMissingFee;
+    return coverage == null
+        ? 0
+        : coverage.estimatedMissingFeeBetween(_coverageFrom, _coverageTo);
   }
+
+  DateTime? get _coverageFrom => _checkingPeriod
+      ? DateTime.utc(_periodFrom.year, _periodFrom.month, _periodFrom.day)
+      : null;
+  DateTime? get _coverageTo => _checkingPeriod
+      ? DateTime.utc(_periodTo.year, _periodTo.month, _periodTo.day)
+      : null;
 
   /// Water balance plus the estimated cost of missing bills; displayed only.
   int? _totalAmount(BillingAuditEntry entry) {
@@ -346,6 +355,8 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
           : await ExportService.instance.exportBillingAudit(
               rows,
               periodChecks: _checks,
+              periodFrom: _coverageFrom,
+              periodTo: _coverageTo,
             );
       if (path != null && mounted) {
         ScaffoldMessenger.of(
@@ -449,7 +460,8 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   Widget _periodFilters() => Card(
     child: ExpansionTile(
       key: const ValueKey('audit-period-filters'),
-      initiallyExpanded: false,
+      initiallyExpanded: _periodFiltersExpanded,
+      onExpansionChanged: (expanded) => _periodFiltersExpanded = expanded,
       title: const Text('Billing period, sessions & amount filters'),
       subtitle: Text(
         _extraFilterSummary.isEmpty
@@ -998,7 +1010,10 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                 barrierDismissible: false,
                                 builder: (_) => BillingAuditPdfDialog(
                                   entries: rows,
+                                  selectedSector: _sector,
                                   periodChecks: _checks,
+                                  periodFrom: _coverageFrom,
+                                  periodTo: _coverageTo,
                                   initialColumnKeys: _missingAmountsView
                                       ? ExportService
                                             .defaultMissingAmountsPdfColumns

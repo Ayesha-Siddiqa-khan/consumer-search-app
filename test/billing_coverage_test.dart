@@ -336,6 +336,8 @@ void main() {
         await tester.pump(const Duration(milliseconds: 50));
       }
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Billing period, sessions & amount filters'));
+      await tester.pumpAndSettle();
       expect(find.text('Consumer FULL'), findsOneWidget);
       expect(find.text('Missing bill amount'), findsOneWidget);
       expect(find.text('Total amount'), findsOneWidget);
@@ -347,18 +349,11 @@ void main() {
         findsOneWidget,
       );
       expect(
-        find.descendant(
-          of: find.byType(DataTable),
-          matching: find.text('Rs. 16,800'),
-        ),
-        findsOneWidget,
-      );
-      expect(
         find.text('Totals — all 2 filtered connection(s) (every page)'),
         findsOneWidget,
       );
       expect(find.text('Missing bill amount: Rs. 3,600'), findsOneWidget);
-      expect(find.text('Total amount: Rs. 16,800'), findsOneWidget);
+      expect(find.text('Total amount: Rs. 33,600'), findsOneWidget);
       await tester.tap(
         find.widgetWithText(DropdownButtonFormField<String>, 'All results'),
       );
@@ -417,7 +412,12 @@ void main() {
             .initialColumnKeys,
         ExportService.defaultMissingAmountsPdfColumns,
       );
-      expect(find.text('7 columns selected'), findsOneWidget);
+      expect(
+        find.text(
+          '${ExportService.defaultMissingAmountsPdfColumns.length} columns selected',
+        ),
+        findsOneWidget,
+      );
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();
       await tester.tap(
@@ -432,6 +432,177 @@ void main() {
         tester.widget<DataTable>(find.byType(DataTable)).sortColumnIndex,
         10,
       );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  test(
+    'PDF columns include missing and total amounts with period-aware totals',
+    () async {
+      final entry = audit(history(omit: {3, 8}));
+      final coverage = entry.coverage!;
+      expect(
+        coverage.estimatedMissingFeeBetween(
+          DateTime.utc(2026, 1, 1),
+          DateTime.utc(2026, 6, 30),
+        ),
+        240000,
+      );
+      expect(
+        coverage.estimatedMissingFeeBetween(
+          DateTime.utc(2023, 1, 1),
+          DateTime.utc(2023, 6, 30),
+        ),
+        0,
+      );
+
+      final keys = ExportService.billingAuditColumns.map((c) => c.key);
+      expect(keys, containsAll(['missing_bill_amount', 'total_amount']));
+      expect(
+        ExportService.defaultBillingAuditPdfColumns,
+        containsAll(['missing_bill_amount', 'missing_amount']),
+      );
+
+      final totals = ExportService.billingAuditTotals([entry]);
+      expect(totals.missingBillAmount, coverage.estimatedMissingFee);
+      expect(
+        totals.totalAmount,
+        entry.payableBalance! + coverage.estimatedMissingFee!,
+      );
+
+      final periodTotals = ExportService.billingAuditTotals(
+        [entry],
+        periodFrom: DateTime.utc(2026, 1, 1),
+        periodTo: DateTime.utc(2026, 6, 30),
+      );
+      expect(periodTotals.missingBillAmount, 240000);
+      expect(periodTotals.totalAmount, entry.payableBalance! + 240000);
+
+      final csv = ExportService.billingAuditCsv(
+        [entry],
+        periodFrom: DateTime.utc(2026, 1, 1),
+        periodTo: DateTime.utc(2026, 6, 30),
+      );
+      expect(csv, contains('"Missing Bill Amount"'));
+      expect(csv, contains('"Total Amount"'));
+      expect(csv, contains('"2400.00"'));
+
+      final bytes = await ExportService.instance.generateBillingAuditPdf(
+        entries: [entry],
+        selectedColumnKeys: {'missing_bill_amount', 'total_amount'},
+        periodFrom: DateTime.utc(2026, 1, 1),
+        periodTo: DateTime.utc(2026, 6, 30),
+      );
+      expect(String.fromCharCodes(bytes.take(5)), '%PDF-');
+    },
+  );
+
+  testWidgets(
+    'missing bill amount follows the selected period and totals every filtered row',
+    (tester) async {
+      late Database db;
+      await tester.runAsync(() async {
+        db = await fixture(inMemoryDatabasePath);
+        await db.insert('consumers', {
+          'connection_no': 'A',
+          'consumer_name': 'Consumer A',
+          'connection_status': 'Regular Connection',
+          'rate_type': 'DOMESTIC',
+        });
+        final bills = history(omit: {3, 8});
+        bills.first['amount_received'] = '4900';
+        bills.first['status'] = 'Paid';
+        for (final bill in bills) {
+          await db.insert('bill_history', bill);
+        }
+      });
+      addTearDown(db.close);
+      await tester.binding.setSurfaceSize(const Size(1800, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: BillingAuditScreen(database: DatabaseService.forTesting(db)),
+        ),
+      );
+      for (
+        var i = 0;
+        i < 20 && find.text('Consumer A').evaluate().isEmpty;
+        i++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 50)),
+        );
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Billing period, sessions & amount filters'));
+      await tester.pumpAndSettle();
+      expect(find.text('Consumer A'), findsOneWidget);
+      expect(find.text('Missing bill amount'), findsOneWidget);
+      expect(find.text('Total amount'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(DataTable),
+          matching: find.text('Rs. 4,800'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(DataTable),
+          matching: find.text('Rs. 11,900'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Missing bill amount: Rs. 4,800'), findsOneWidget);
+      expect(find.text('Total amount: Rs. 11,900'), findsOneWidget);
+      expect(
+        find.text('Totals — all 1 filtered connection(s) (every page)'),
+        findsOneWidget,
+      );
+
+      final fromKey = find.byKey(const ValueKey('audit-period-from'));
+      await tester.tap(find.text('Billing period, sessions & amount filters'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(fromKey);
+      await tester.pumpAndSettle();
+      await tester.tap(fromKey);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('01/01/2026').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('01/01/2026').last);
+      await tester.pumpAndSettle();
+      final periodPresence = find.widgetWithText(
+        DropdownButtonFormField<String>,
+        'All period results',
+      );
+      await tester.ensureVisible(periodPresence);
+      await tester.pumpAndSettle();
+      await tester.tap(periodPresence);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Period missing / incomplete').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.byType(DataTable));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.descendant(
+          of: find.byType(DataTable),
+          matching: find.text('Rs. 2,400'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(DataTable),
+          matching: find.text('Rs. 9,500'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Missing bill amount: Rs. 2,400'), findsOneWidget);
+      expect(find.text('Total amount: Rs. 9,500'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },
@@ -483,6 +654,21 @@ void main() {
       }
       await tester.pumpAndSettle();
       Future<void> choose(String current, String next) async {
+        if (find
+            .byKey(const ValueKey('audit-period-from'))
+            .evaluate()
+            .isNotEmpty) {
+          await tester.tap(
+            find.text('Billing period, sessions & amount filters'),
+          );
+          await tester.pumpAndSettle();
+        }
+        final field = find.widgetWithText(
+          DropdownButtonFormField<String>,
+          current,
+        );
+        await tester.ensureVisible(field);
+        await tester.pumpAndSettle();
         await tester.tap(
           find.widgetWithText(DropdownButtonFormField<String>, current),
         );

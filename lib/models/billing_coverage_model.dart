@@ -47,6 +47,21 @@ class BillingCoverage {
   int? get estimatedMissingFee => monthlyWaterRate == null
       ? null
       : missingPeriods.fold<int>(0, (sum, gap) => sum + gap.estimatedFee!);
+
+  /// Estimated cost of missing periods overlapping [from]-[to], inclusive.
+  /// A null range means the full checked history.
+  int? estimatedMissingFeeBetween(DateTime? from, DateTime? to) {
+    if (missingPeriods.isEmpty) return 0;
+    final gaps = from == null || to == null
+        ? missingPeriods
+        : missingPeriods
+              .where((gap) => !gap.end.isBefore(from) && !gap.start.isAfter(to))
+              .toList();
+    if (gaps.isEmpty) return 0;
+    if (monthlyWaterRate == null) return null;
+    return gaps.fold<int>(0, (sum, gap) => sum + (gap.estimatedFee ?? 0));
+  }
+
   int get shortFeeAmount => shortFees.fold(0, (sum, bill) => sum + bill.amount);
   int? get estimatedMissingAmount => estimatedMissingFee == null
       ? null

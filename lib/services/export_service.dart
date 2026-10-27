@@ -29,86 +29,138 @@ class BillingAuditColumn {
   final String key;
   final String label;
   final String Function(BillingAuditEntry) value;
+  final String Function(BillingAuditEntry, DateTime?, DateTime?)? periodValue;
   final double width;
-  const BillingAuditColumn(this.key, this.label, this.value, {this.width = 1});
+  const BillingAuditColumn(
+    this.key,
+    this.label,
+    this.value, {
+    this.width = 1,
+    this.periodValue,
+  });
+
+  String valueFor(BillingAuditEntry entry, DateTime? from, DateTime? to) =>
+      periodValue?.call(entry, from, to) ?? value(entry);
 }
 
 class ExportService {
   static final ExportService instance = ExportService._internal();
   ExportService._internal();
 
-  Future<Uint8List> generateBillingSummaryPdf(Map<String, dynamic> stats) async {
+  Future<Uint8List> generateBillingSummaryPdf(
+    Map<String, dynamic> stats,
+  ) async {
     final document = pw.Document();
     final number = NumberFormat('#,##0.##');
     final categories = {
-      'domestic': 'Domestic', 'commercial': 'Commercial', 'private': 'Private Societies',
+      'domestic': 'Domestic',
+      'commercial': 'Commercial',
+      'private': 'Private Societies',
       if ((stats['unknownCount'] as num? ?? 0) > 0) 'unknown': 'Unclassified',
       '': 'Total',
     };
-    const headers = ['Category', 'Bills', 'Paid bills amount', 'Unpaid / expired amount', 'Arrears (included)', 'Amount received'];
-    document.addPage(pw.MultiPage(
-      pageFormat: PdfPageFormat.a4.landscape,
-      margin: const pw.EdgeInsets.all(28),
-      theme: pw.ThemeData.withFont(base: pw.Font.helvetica(), bold: pw.Font.helveticaBold()),
-      build: (_) => [
-        pw.Text('Category Totals & Collections', style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 6),
-        pw.Text('Generated: ${DateFormat('dd-MM-yyyy HH:mm').format(DateTime.now())}', style: const pw.TextStyle(fontSize: 10)),
-        pw.SizedBox(height: 18),
-        pw.Table(
-          border: pw.TableBorder.all(color: PdfColors.black, width: 0.6),
-          columnWidths: const {
-            0: pw.FlexColumnWidth(1.25),
-            1: pw.FlexColumnWidth(0.6),
-            2: pw.FlexColumnWidth(1.35),
-            3: pw.FlexColumnWidth(1.45),
-            4: pw.FlexColumnWidth(1.35),
-            5: pw.FlexColumnWidth(1.35),
-          },
-          children: [
-            pw.TableRow(
-              decoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFFEEEEEE)),
-              children: [
-                for (final label in headers)
-                  pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 16),
-                    alignment: pw.Alignment.centerLeft,
-                    child: pw.Text(
-                      label,
-                      style: pw.TextStyle(fontSize: 11, fontWeight: pw.FontWeight.bold),
-                    ),
-                  ),
-              ],
-            ),
-            for (final entry in categories.entries)
+    const headers = [
+      'Category',
+      'Bills',
+      'Paid bills amount',
+      'Unpaid / expired amount',
+      'Arrears (included)',
+      'Amount received',
+    ];
+    document.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(28),
+        theme: pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        ),
+        build: (_) => [
+          pw.Text(
+            'Category Totals & Collections',
+            style: pw.TextStyle(fontSize: 18, fontWeight: pw.FontWeight.bold),
+          ),
+          pw.SizedBox(height: 6),
+          pw.Text(
+            'Generated: ${DateFormat('dd-MM-yyyy HH:mm').format(DateTime.now())}',
+            style: const pw.TextStyle(fontSize: 10),
+          ),
+          pw.SizedBox(height: 18),
+          pw.Table(
+            border: pw.TableBorder.all(color: PdfColors.black, width: 0.6),
+            columnWidths: const {
+              0: pw.FlexColumnWidth(1.25),
+              1: pw.FlexColumnWidth(0.6),
+              2: pw.FlexColumnWidth(1.35),
+              3: pw.FlexColumnWidth(1.45),
+              4: pw.FlexColumnWidth(1.35),
+              5: pw.FlexColumnWidth(1.35),
+            },
+            children: [
               pw.TableRow(
-                decoration: entry.key.isEmpty
-                    ? const pw.BoxDecoration(color: PdfColor.fromInt(0xFFF7F7F7))
-                    : const pw.BoxDecoration(color: PdfColors.white),
+                decoration: const pw.BoxDecoration(
+                  color: PdfColor.fromInt(0xFFEEEEEE),
+                ),
                 children: [
-                  for (final value in [
-                    entry.value,
-                    number.format(stats['${entry.key}Count'] ?? 0),
-                    for (final field in ['PaidAmount', 'UnpaidAmount', 'Arrears', 'Received'])
-                      'Rs. ${number.format(stats['${entry.key}$field'] ?? 0)}'
-                  ])
+                  for (final label in headers)
                     pw.Container(
-                      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 24),
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 16,
+                      ),
                       alignment: pw.Alignment.centerLeft,
                       child: pw.Text(
-                        value,
+                        label,
                         style: pw.TextStyle(
-                          fontSize: entry.key.isEmpty ? 12 : 11.5,
-                          fontWeight: entry.key.isEmpty ? pw.FontWeight.bold : pw.FontWeight.normal,
+                          fontSize: 11,
+                          fontWeight: pw.FontWeight.bold,
                         ),
                       ),
                     ),
                 ],
               ),
-          ],
-        ),
-      ],
-    ));
+              for (final entry in categories.entries)
+                pw.TableRow(
+                  decoration: entry.key.isEmpty
+                      ? const pw.BoxDecoration(
+                          color: PdfColor.fromInt(0xFFF7F7F7),
+                        )
+                      : const pw.BoxDecoration(color: PdfColors.white),
+                  children: [
+                    for (final value in [
+                      entry.value,
+                      number.format(stats['${entry.key}Count'] ?? 0),
+                      for (final field in [
+                        'PaidAmount',
+                        'UnpaidAmount',
+                        'Arrears',
+                        'Received',
+                      ])
+                        'Rs. ${number.format(stats['${entry.key}$field'] ?? 0)}',
+                    ])
+                      pw.Container(
+                        padding: const pw.EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 24,
+                        ),
+                        alignment: pw.Alignment.centerLeft,
+                        child: pw.Text(
+                          value,
+                          style: pw.TextStyle(
+                            fontSize: entry.key.isEmpty ? 12 : 11.5,
+                            fontWeight: entry.key.isEmpty
+                                ? pw.FontWeight.bold
+                                : pw.FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
     return document.save();
   }
 
@@ -133,26 +185,98 @@ class ExportService {
   }
 
   static final List<ColumnOption> availableColumns = [
-    ColumnOption(key: 'sr_no', label: 'Sr #', valueGetter: (c) => c.srNo.toString()),
-    ColumnOption(key: 'consumer_name', label: 'Consumer Name', valueGetter: (c) => c.consumerName),
-    ColumnOption(key: 'father_husband_name', label: 'F/H Name', valueGetter: (c) => c.fatherHusbandName),
-    ColumnOption(key: 'total_bill', label: 'Total Bill', valueGetter: (c) => formatAmountWithoutDecimals(c.totalBill)),
+    ColumnOption(
+      key: 'sr_no',
+      label: 'Sr #',
+      valueGetter: (c) => c.srNo.toString(),
+    ),
+    ColumnOption(
+      key: 'consumer_name',
+      label: 'Consumer Name',
+      valueGetter: (c) => c.consumerName,
+    ),
+    ColumnOption(
+      key: 'father_husband_name',
+      label: 'F/H Name',
+      valueGetter: (c) => c.fatherHusbandName,
+    ),
+    ColumnOption(
+      key: 'total_bill',
+      label: 'Total Bill',
+      valueGetter: (c) => formatAmountWithoutDecimals(c.totalBill),
+    ),
     ColumnOption(key: 'mobile', label: 'Mobile', valueGetter: (c) => c.mobile),
-    ColumnOption(key: 'connection_no', label: 'Connection No', valueGetter: (c) => c.connectionNo),
-    ColumnOption(key: 'old_connection_no', label: 'Old Conn No', valueGetter: (c) => c.oldConnectionNo),
+    ColumnOption(
+      key: 'connection_no',
+      label: 'Connection No',
+      valueGetter: (c) => c.connectionNo,
+    ),
+    ColumnOption(
+      key: 'old_connection_no',
+      label: 'Old Conn No',
+      valueGetter: (c) => c.oldConnectionNo,
+    ),
     ColumnOption(key: 'sector', label: 'Sector', valueGetter: (c) => c.sector),
-    ColumnOption(key: 'locality', label: 'Locality', valueGetter: (c) => c.locality),
-    ColumnOption(key: 'address', label: 'Address', valueGetter: (c) => c.address),
-    ColumnOption(key: 'rate_type', label: 'Rate Type', valueGetter: (c) => c.rateType),
-    ColumnOption(key: 'order_no', label: 'Order / Reg No', valueGetter: (c) => c.orderNo),
-    ColumnOption(key: 'connection_date', label: 'Date (DD-MM-YYYY)', valueGetter: (c) => c.connectionDate),
-    ColumnOption(key: 'connection_status', label: 'Status', valueGetter: (c) => c.connectionStatus),
-    ColumnOption(key: 'consumer_status', label: 'Consumer Status', valueGetter: (c) => c.consumerStatus),
-    ColumnOption(key: 'bill_status', label: 'Bill Status', valueGetter: (c) => c.billStatus),
-    ColumnOption(key: 'amount_received', label: 'Amt Received', valueGetter: (c) => formatAmountWithoutDecimals(c.amountReceived)),
-    ColumnOption(key: 'due_date', label: 'Due Date', valueGetter: (c) => c.dueDate),
-    ColumnOption(key: 'fine', label: 'Fine', valueGetter: (c) => formatAmountWithoutDecimals(c.fine)),
-    ColumnOption(key: 'after_due_date', label: 'After Due Date', valueGetter: (c) => formatAmountWithoutDecimals(c.afterDueDate)),
+    ColumnOption(
+      key: 'locality',
+      label: 'Locality',
+      valueGetter: (c) => c.locality,
+    ),
+    ColumnOption(
+      key: 'address',
+      label: 'Address',
+      valueGetter: (c) => c.address,
+    ),
+    ColumnOption(
+      key: 'rate_type',
+      label: 'Rate Type',
+      valueGetter: (c) => c.rateType,
+    ),
+    ColumnOption(
+      key: 'order_no',
+      label: 'Order / Reg No',
+      valueGetter: (c) => c.orderNo,
+    ),
+    ColumnOption(
+      key: 'connection_date',
+      label: 'Date (DD-MM-YYYY)',
+      valueGetter: (c) => c.connectionDate,
+    ),
+    ColumnOption(
+      key: 'connection_status',
+      label: 'Status',
+      valueGetter: (c) => c.connectionStatus,
+    ),
+    ColumnOption(
+      key: 'consumer_status',
+      label: 'Consumer Status',
+      valueGetter: (c) => c.consumerStatus,
+    ),
+    ColumnOption(
+      key: 'bill_status',
+      label: 'Bill Status',
+      valueGetter: (c) => c.billStatus,
+    ),
+    ColumnOption(
+      key: 'amount_received',
+      label: 'Amt Received',
+      valueGetter: (c) => formatAmountWithoutDecimals(c.amountReceived),
+    ),
+    ColumnOption(
+      key: 'due_date',
+      label: 'Due Date',
+      valueGetter: (c) => c.dueDate,
+    ),
+    ColumnOption(
+      key: 'fine',
+      label: 'Fine',
+      valueGetter: (c) => formatAmountWithoutDecimals(c.fine),
+    ),
+    ColumnOption(
+      key: 'after_due_date',
+      label: 'After Due Date',
+      valueGetter: (c) => formatAmountWithoutDecimals(c.afterDueDate),
+    ),
   ];
 
   /// Default 7 columns selected by user preference for PDF Export (Sector is shown in header)
@@ -172,7 +296,8 @@ class ExportService {
     List<String>? orderedColumnKeys,
     String? sector,
   }) {
-    final hasSpecificSector = sector != null &&
+    final hasSpecificSector =
+        sector != null &&
         sector.trim().isNotEmpty &&
         sector.trim().toLowerCase() != 'all' &&
         !sector.trim().toLowerCase().startsWith('all sector');
@@ -186,11 +311,17 @@ class ExportService {
     final colMap = {for (var col in availableColumns) col.key: col};
     if (orderedColumnKeys != null && orderedColumnKeys.isNotEmpty) {
       final ordered = orderedColumnKeys
-          .where((k) => effectiveSelectedKeys.contains(k) && colMap.containsKey(k))
+          .where(
+            (k) => effectiveSelectedKeys.contains(k) && colMap.containsKey(k),
+          )
           .map((k) => colMap[k]!)
           .toList();
       final remaining = availableColumns
-          .where((col) => effectiveSelectedKeys.contains(col.key) && !ordered.contains(col))
+          .where(
+            (col) =>
+                effectiveSelectedKeys.contains(col.key) &&
+                !ordered.contains(col),
+          )
           .toList();
       return [...ordered, ...remaining];
     } else {
@@ -212,13 +343,15 @@ class ExportService {
   }) async {
     final pdfDoc = pw.Document();
 
-    final hasSpecificSector = sector != null &&
+    final hasSpecificSector =
+        sector != null &&
         sector.trim().isNotEmpty &&
         sector.trim().toLowerCase() != 'all' &&
         !sector.trim().toLowerCase().startsWith('all sector');
     final cleanSector = hasSpecificSector ? sector.trim() : '';
 
-    final hasSpecificBillStatus = billStatus != null &&
+    final hasSpecificBillStatus =
+        billStatus != null &&
         billStatus.trim().isNotEmpty &&
         billStatus.trim().toLowerCase() != 'all' &&
         !billStatus.trim().toLowerCase().startsWith('all bill');
@@ -247,7 +380,9 @@ class ExportService {
 
     String? cleanFilterSummary = filterSummary;
     if (cleanFilterSummary != null && cleanFilterSummary.isNotEmpty) {
-      final parts = cleanFilterSummary.split('•').map((s) => s.trim()).where((s) {
+      final parts = cleanFilterSummary.split('•').map((s) => s.trim()).where((
+        s,
+      ) {
         final lower = s.toLowerCase();
         if (hasSpecificSector && lower.startsWith('sector:')) return false;
         if (hasSpecificBillStatus && lower.startsWith('bill:')) return false;
@@ -285,12 +420,14 @@ class ExportService {
 
         while (i < consumers.length) {
           final c = consumers[i];
-          final isMultiLine = c.consumerName.length > 24 ||
+          final isMultiLine =
+              c.consumerName.length > 24 ||
               c.fatherHusbandName.length > 24 ||
               c.address.length > 30;
           final rowCost = isMultiLine ? 29.0 : 18.5;
 
-          if (chunk.isNotEmpty && (currentTableHeight + rowCost > maxTableHeight)) {
+          if (chunk.isNotEmpty &&
+              (currentTableHeight + rowCost > maxTableHeight)) {
             break;
           }
           chunk.add(c);
@@ -337,11 +474,16 @@ class ExportService {
                 // Header Banner: Only rendered on the first page as requested!
                 if (pageIdx == 0) ...[
                   pw.Container(
-                    padding: const pw.EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const pw.EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
                     decoration: pw.BoxDecoration(
                       color: PdfColors.white,
                       border: pw.Border.all(color: PdfColors.black, width: 1.5),
-                      borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
+                      borderRadius: const pw.BorderRadius.all(
+                        pw.Radius.circular(4),
+                      ),
                     ),
                     child: pw.Row(
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
@@ -381,11 +523,15 @@ class ExportService {
                       ],
                     ),
                   ),
-                  if (cleanFilterSummary != null && cleanFilterSummary.isNotEmpty) ...[
+                  if (cleanFilterSummary != null &&
+                      cleanFilterSummary.isNotEmpty) ...[
                     pw.SizedBox(height: 4),
                     pw.Text(
                       'Filters: $cleanFilterSummary',
-                      style: const pw.TextStyle(fontSize: 10, color: PdfColors.black),
+                      style: const pw.TextStyle(
+                        fontSize: 10,
+                        color: PdfColors.black,
+                      ),
                     ),
                   ],
                   pw.SizedBox(height: 6),
@@ -393,30 +539,33 @@ class ExportService {
 
                 // Continuous Table
                 pw.Table(
-                  border: pw.TableBorder.all(color: PdfColors.black, width: 0.6),
+                  border: pw.TableBorder.all(
+                    color: PdfColors.black,
+                    width: 0.6,
+                  ),
                   columnWidths: {
                     for (int i = 0; i < activeColumns.length; i++)
                       i: activeColumns[i].key == 'sr_no'
                           ? const pw.FixedColumnWidth(28)
                           : activeColumns[i].key == 'address'
-                              ? const pw.FlexColumnWidth(2.2)
-                              : activeColumns[i].key == 'consumer_name'
-                                  ? const pw.FlexColumnWidth(2.2)
-                                  : activeColumns[i].key == 'father_husband_name'
-                                      ? const pw.FlexColumnWidth(2.0)
-                                      : activeColumns[i].key == 'mobile'
-                                          ? const pw.FlexColumnWidth(1.4)
-                                          : activeColumns[i].key == 'connection_no'
-                                              ? const pw.FlexColumnWidth(1.4)
-                                              : activeColumns[i].key == 'old_connection_no'
-                                                  ? const pw.FlexColumnWidth(1.1)
-                                                  : activeColumns[i].key == 'total_bill'
-                                                      ? const pw.FlexColumnWidth(1.3)
-                                                      : activeColumns[i].key == 'after_due_date'
-                                                          ? const pw.FlexColumnWidth(1.3)
-                                                          : activeColumns[i].key == 'sector'
-                                                              ? const pw.FlexColumnWidth(1.4)
-                                                              : const pw.FlexColumnWidth(1.1),
+                          ? const pw.FlexColumnWidth(2.2)
+                          : activeColumns[i].key == 'consumer_name'
+                          ? const pw.FlexColumnWidth(2.2)
+                          : activeColumns[i].key == 'father_husband_name'
+                          ? const pw.FlexColumnWidth(2.0)
+                          : activeColumns[i].key == 'mobile'
+                          ? const pw.FlexColumnWidth(1.4)
+                          : activeColumns[i].key == 'connection_no'
+                          ? const pw.FlexColumnWidth(1.4)
+                          : activeColumns[i].key == 'old_connection_no'
+                          ? const pw.FlexColumnWidth(1.1)
+                          : activeColumns[i].key == 'total_bill'
+                          ? const pw.FlexColumnWidth(1.3)
+                          : activeColumns[i].key == 'after_due_date'
+                          ? const pw.FlexColumnWidth(1.3)
+                          : activeColumns[i].key == 'sector'
+                          ? const pw.FlexColumnWidth(1.4)
+                          : const pw.FlexColumnWidth(1.1),
                   },
                   children: [
                     // Table Header Row (Light gray background, solid black borders, 10pt bold)
@@ -426,7 +575,10 @@ class ExportService {
                       ),
                       children: activeColumns.map((col) {
                         return pw.Container(
-                          padding: pw.EdgeInsets.symmetric(horizontal: 4, vertical: headerVerticalPad),
+                          padding: pw.EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: headerVerticalPad,
+                          ),
                           child: pw.Text(
                             col.label,
                             style: pw.TextStyle(
@@ -459,7 +611,10 @@ class ExportService {
                           }
 
                           return pw.Container(
-                            padding: pw.EdgeInsets.symmetric(horizontal: 4, vertical: rowVerticalPad),
+                            padding: pw.EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: rowVerticalPad,
+                            ),
                             child: pw.Text(
                               val.isNotEmpty ? val : '-',
                               style: const pw.TextStyle(
@@ -482,14 +637,20 @@ class ExportService {
                 pw.Container(
                   padding: const pw.EdgeInsets.only(top: 4),
                   decoration: const pw.BoxDecoration(
-                    border: pw.Border(top: pw.BorderSide(color: PdfColors.black, width: 0.5)),
+                    border: pw.Border(
+                      top: pw.BorderSide(color: PdfColors.black, width: 0.5),
+                    ),
                   ),
                   child: pw.Row(
                     mainAxisAlignment: pw.MainAxisAlignment.end,
                     children: [
                       pw.Text(
                         'Page ${pageIdx + 1} of ${totalPages > 0 ? totalPages : 1}',
-                        style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold, color: PdfColors.black),
+                        style: pw.TextStyle(
+                          fontSize: 10,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.black,
+                        ),
                       ),
                     ],
                   ),
@@ -627,7 +788,10 @@ class ExportService {
                     children: [
                       info('Generated Water Fee:', money(summary.waterFee)),
                       pw.SizedBox(height: 3),
-                      info('Amount Received (water):', money(summary.waterReceived)),
+                      info(
+                        'Amount Received (water):',
+                        money(summary.waterReceived),
+                      ),
                       pw.SizedBox(height: 3),
 
                       info('Fine Collected:', money(summary.fineCollected)),
@@ -651,9 +815,11 @@ class ExportService {
             'Amount Received excludes identified collected fines and other charges. Detailed reconciliation is available on Water Fee Audit.',
             style: const pw.TextStyle(fontSize: 8),
           ),
-          pw.Text('Advance applied (not new cash): ${money(summary.advanceApplied)}; unapplied receipts / advance credit: ${money(summary.advanceBalance)}. '
+          pw.Text(
+            'Advance applied (not new cash): ${money(summary.advanceApplied)}; unapplied receipts / advance credit: ${money(summary.advanceBalance)}. '
             'Older overlapping bills excluded: ${summary.excludedBillNumbers.isEmpty ? 'None' : summary.excludedBillNumbers.join(', ')}.',
-            style: const pw.TextStyle(fontSize: 8)),
+            style: const pw.TextStyle(fontSize: 8),
+          ),
           if (summary.confirmedPaymentCount > 0)
             pw.Padding(
               padding: const pw.EdgeInsets.only(top: 4),
@@ -669,8 +835,10 @@ class ExportService {
           if (summary.coverage?.hasWarning ?? false)
             pw.Padding(
               padding: const pw.EdgeInsets.only(bottom: 8),
-              child: pw.Text(summary.coverage!.warningText(money),
-                style: const pw.TextStyle(fontSize: 9, color: PdfColors.red)),
+              child: pw.Text(
+                summary.coverage!.warningText(money),
+                style: const pw.TextStyle(fontSize: 9, color: PdfColors.red),
+              ),
             ),
           pw.Table(
             border: pw.TableBorder.all(width: 0.5),
@@ -751,54 +919,379 @@ class ExportService {
     return pdfDoc.save();
   }
 
-  static String _auditAmount(int? paisa) => paisa == null ? '' : (paisa / 100).toStringAsFixed(2);
+  static String _auditAmount(int? paisa) => paisa == null
+      ? ''
+      : '${paisa < 0 ? '-' : ''}${paisa.abs() ~/ 100}.${(paisa.abs() % 100).toString().padLeft(2, '0')}';
+
+  static int? _missingBillAmount(
+    BillingAuditEntry entry,
+    DateTime? from,
+    DateTime? to,
+  ) {
+    final coverage = entry.coverage;
+    return coverage == null ? 0 : coverage.estimatedMissingFeeBetween(from, to);
+  }
+
+  static int? _totalAmount(
+    BillingAuditEntry entry,
+    DateTime? from,
+    DateTime? to,
+  ) {
+    final missing = _missingBillAmount(entry, from, to);
+    final balance = entry.payableBalance;
+    return balance == null || missing == null ? null : balance + missing;
+  }
+
+  static String billingAuditPdfFileName(
+    List<BillingAuditEntry> entries, {
+    String? selectedSector,
+    String? selectedLocality,
+    DateTime? now,
+  }) {
+    String selected(String? value) =>
+        value == null ||
+            value.trim().isEmpty ||
+            value.toLowerCase().startsWith('all ')
+        ? ''
+        : value.trim();
+    final localities = entries
+        .map((e) => e.locality.trim())
+        .where((s) => s.isNotEmpty)
+        .toSet();
+    final sectors = entries
+        .map((e) => e.sector.trim())
+        .where((s) => s.isNotEmpty)
+        .toSet();
+    final locality = selected(selectedLocality),
+        sector = selected(selectedSector);
+    final area = locality.isNotEmpty
+        ? locality
+        : sector.isNotEmpty
+        ? sector
+        : localities.length == 1
+        ? localities.single
+        : sectors.length == 1
+        ? sectors.single
+        : '';
+    var stem = area
+        .replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1F]'), '_')
+        .replaceAll(RegExp(r'[. ]+$'), '')
+        .trim();
+    if (stem.length > 100) stem = stem.substring(0, 100).trim();
+    return '${stem.isEmpty ? '' : '${stem}_'}Water_Fee_Audit_${DateFormat('dd-MM-yyyy_HHmm').format(now ?? DateTime.now())}.pdf';
+  }
+
+  /// Null values remain excluded and explicitly marked, never silently zeroed.
+  static Map<String, String> billingAuditColumnTotals(
+    List<BillingAuditEntry> entries, {
+    DateTime? periodFrom,
+    DateTime? periodTo,
+  }) {
+    final getters = <String, int? Function(BillingAuditEntry)>{
+      'bills': (e) => e.billCount,
+      'paid': (e) => e.paidBillCount,
+      'unpaid': (e) => e.unpaidBillCount,
+      'expired': (e) => e.expiredBillCount,
+      'paid_short': (e) => e.paidShortCount,
+      'missing_bill_count': (e) => e.coverage?.missingBillCount ?? 0,
+      'short_fee_count': (e) => e.coverage?.shortFees.length ?? 0,
+      'water': (e) => e.waterFee,
+      'receipts': (e) => e.waterReceived,
+      'gross_receipts': (e) => e.cashReceived,
+      'recorded_receipts': (e) => e.received,
+      'advance_applied': (e) => e.advanceApplied,
+      'advance_remaining': (e) => e.advanceBalance,
+      'fine_collected': (e) => e.fineCollected,
+      'unpaid_fine': (e) => e.outstandingFine,
+      'balance': (e) => e.payableBalance,
+      'missing_bill_amount': (e) => _missingBillAmount(e, periodFrom, periodTo),
+      'total_amount': (e) => _totalAmount(e, periodFrom, periodTo),
+      'missing_water_fee': (e) => _missingBillAmount(e, periodFrom, periodTo),
+      'short_fee_amount': (e) => e.coverage?.shortFeeAmount,
+      'expected_water_fee': (e) => e.coverage?.expectedWaterFee,
+      'missing_amount': (e) => _totalAmount(e, periodFrom, periodTo),
+    };
+    const counts = {
+      'bills',
+      'paid',
+      'unpaid',
+      'expired',
+      'paid_short',
+      'missing_bill_count',
+      'short_fee_count',
+    };
+    return {
+      for (final item in getters.entries)
+        item.key: (() {
+          final amounts = entries.map(item.value).toList();
+          final known = amounts.whereType<int>().toList();
+          if (entries.isNotEmpty && known.isEmpty) return 'Needs review';
+          final total = known.fold<int>(0, (sum, amount) => sum + amount);
+          return '${counts.contains(item.key) ? '$total' : _auditAmount(total)}${known.length < amounts.length ? '*' : ''}';
+        })(),
+    };
+  }
+
+  /// Sums the displayed amount columns, skipping unresolved values the same
+  /// way the on-screen totals strip does.
+  static ({
+    int? waterBalance,
+    int? missingBillAmount,
+    int? totalAmount,
+    int unresolved,
+  })
+  billingAuditTotals(
+    List<BillingAuditEntry> entries, {
+    DateTime? periodFrom,
+    DateTime? periodTo,
+  }) {
+    int? sum(int? Function(BillingAuditEntry) amount) {
+      var total = 0;
+      var known = false;
+      for (final entry in entries) {
+        final value = amount(entry);
+        if (value == null) continue;
+        known = true;
+        total += value;
+      }
+      return known || entries.isEmpty ? total : null;
+    }
+
+    return (
+      waterBalance: sum((e) => e.payableBalance),
+      missingBillAmount: sum(
+        (e) => _missingBillAmount(e, periodFrom, periodTo),
+      ),
+      totalAmount: sum((e) => _totalAmount(e, periodFrom, periodTo)),
+      unresolved: entries
+          .where((e) => _totalAmount(e, periodFrom, periodTo) == null)
+          .length,
+    );
+  }
 
   static final billingAuditColumns = <BillingAuditColumn>[
-    BillingAuditColumn('bill_group', 'Bill Group', (e) => e.billGroupLabel, width: 1.5),
-    BillingAuditColumn('current_bill_status', 'Current Bill Status', (e) => e.currentBillStatus),
-    BillingAuditColumn('consumer_status', 'Consumer Status', (e) => e.consumerStatus),
+    BillingAuditColumn(
+      'bill_group',
+      'Bill Group',
+      (e) => e.billGroupLabel,
+      width: 1.5,
+    ),
+    BillingAuditColumn(
+      'current_bill_status',
+      'Current Bill Status',
+      (e) => e.currentBillStatus,
+    ),
+    BillingAuditColumn(
+      'consumer_status',
+      'Consumer Status',
+      (e) => e.consumerStatus,
+    ),
     BillingAuditColumn('connection', 'Connection No', (e) => e.connectionNo),
-    BillingAuditColumn('consumer', 'Consumer Name', (e) => e.consumerName, width: 1.8),
-    BillingAuditColumn('father', 'F/H Name', (e) => e.fatherHusbandName, width: 1.6),
+    BillingAuditColumn(
+      'consumer',
+      'Consumer Name',
+      (e) => e.consumerName,
+      width: 1.8,
+    ),
+    BillingAuditColumn(
+      'father',
+      'F/H Name',
+      (e) => e.fatherHusbandName,
+      width: 1.6,
+    ),
     BillingAuditColumn('sector', 'Sector', (e) => e.sector, width: 1.5),
     BillingAuditColumn('locality', 'Locality', (e) => e.locality, width: 1.5),
     BillingAuditColumn('address', 'Address', (e) => e.address, width: 2.2),
     BillingAuditColumn('date', 'Connection Date', (e) => e.connectionDate),
-    BillingAuditColumn('connection_status', 'Connection Status', (e) => e.connectionStatus, width: 1.4),
-    BillingAuditColumn('category', 'Category', (e) => e.categoryLabel, width: 1.3),
-    BillingAuditColumn('bills', 'Generated Bills', (e) => '${e.billCount}', width: 0.8),
-    BillingAuditColumn('paid', 'Marked Paid', (e) => '${e.paidBillCount}', width: 0.8),
-    BillingAuditColumn('unpaid', 'Unpaid', (e) => '${e.unpaidBillCount}', width: 0.8),
-    BillingAuditColumn('water', 'Generated Water Fee', (e) => _auditAmount(e.waterFee)),
-    BillingAuditColumn('receipts', 'Amount Received (Water)', (e) => _auditAmount(e.waterReceived)),
-    BillingAuditColumn('gross_receipts', 'Cash Receipts', (e) => _auditAmount(e.cashReceived)),
-    BillingAuditColumn('recorded_receipts', 'Recorded Receipts (including credit applications)', (e) => _auditAmount(e.received)),
-    BillingAuditColumn('advance_applied', 'Advance Applied (not new cash)', (e) => _auditAmount(e.advanceApplied)),
-    BillingAuditColumn('advance_remaining', 'Unapplied Receipts / Advance Credit', (e) => _auditAmount(e.advanceBalance)),
-    BillingAuditColumn('excluded_bills', 'Older Overlapping Bills Excluded', (e) => e.excludedBillNumbers.join(', ')),
-    BillingAuditColumn('fine_collected', 'Fine Collected', (e) => _auditAmount(e.fineCollected)),
-    BillingAuditColumn('unpaid_fine', 'Unpaid Fine', (e) => _auditAmount(e.outstandingFine)),
-    BillingAuditColumn('balance', 'Water Balance', (e) => _auditAmount(e.payableBalance)),
-    BillingAuditColumn('paid_short', 'Paid Bills With Short Receipt', (e) => '${e.paidShortCount}', width: 0.9),
+    BillingAuditColumn(
+      'connection_status',
+      'Connection Status',
+      (e) => e.connectionStatus,
+      width: 1.4,
+    ),
+    BillingAuditColumn(
+      'category',
+      'Category',
+      (e) => e.categoryLabel,
+      width: 1.3,
+    ),
+    BillingAuditColumn(
+      'bills',
+      'Generated Bills',
+      (e) => '${e.billCount}',
+      width: 0.8,
+    ),
+    BillingAuditColumn(
+      'paid',
+      'Marked Paid',
+      (e) => '${e.paidBillCount}',
+      width: 0.8,
+    ),
+    BillingAuditColumn(
+      'unpaid',
+      'Unpaid',
+      (e) => '${e.unpaidBillCount}',
+      width: 0.8,
+    ),
+    BillingAuditColumn(
+      'expired',
+      'Expired (carried)',
+      (e) => '${e.expiredBillCount}',
+      width: 0.8,
+    ),
+    BillingAuditColumn(
+      'water',
+      'Generated Water Fee',
+      (e) => _auditAmount(e.waterFee),
+    ),
+    BillingAuditColumn(
+      'receipts',
+      'Amount Received (Water)',
+      (e) => _auditAmount(e.waterReceived),
+    ),
+    BillingAuditColumn(
+      'gross_receipts',
+      'Cash Receipts',
+      (e) => _auditAmount(e.cashReceived),
+    ),
+    BillingAuditColumn(
+      'recorded_receipts',
+      'Recorded Receipts (including credit applications)',
+      (e) => _auditAmount(e.received),
+    ),
+    BillingAuditColumn(
+      'advance_applied',
+      'Advance Applied (not new cash)',
+      (e) => _auditAmount(e.advanceApplied),
+    ),
+    BillingAuditColumn(
+      'advance_remaining',
+      'Unapplied Receipts / Advance Credit',
+      (e) => _auditAmount(e.advanceBalance),
+    ),
+    BillingAuditColumn(
+      'excluded_bills',
+      'Older Overlapping Bills Excluded',
+      (e) => e.excludedBillNumbers.join(', '),
+    ),
+    BillingAuditColumn(
+      'fine_collected',
+      'Fine Collected',
+      (e) => _auditAmount(e.fineCollected),
+    ),
+    BillingAuditColumn(
+      'unpaid_fine',
+      'Unpaid Fine',
+      (e) => _auditAmount(e.outstandingFine),
+    ),
+    BillingAuditColumn(
+      'balance',
+      'Water Balance',
+      (e) => _auditAmount(e.payableBalance),
+    ),
+    BillingAuditColumn(
+      'missing_bill_amount',
+      'Missing Bill Amount',
+      (e) => _auditAmount(_missingBillAmount(e, null, null)),
+      periodValue: (e, from, to) =>
+          _auditAmount(_missingBillAmount(e, from, to)),
+    ),
+    BillingAuditColumn(
+      'total_amount',
+      'Total Amount',
+      (e) => _auditAmount(_totalAmount(e, null, null)),
+      periodValue: (e, from, to) => _auditAmount(_totalAmount(e, from, to)),
+    ),
+    BillingAuditColumn(
+      'paid_short',
+      'Paid Bills With Short Receipt',
+      (e) => '${e.paidShortCount}',
+      width: 0.9,
+    ),
     BillingAuditColumn('result', 'Result', (e) => e.result, width: 1.4),
-    BillingAuditColumn('review', 'Review Reasons', (e) => [...e.reviewReasons, if (e.confirmedPaymentCount > 0) 'Confirmed sector payment exception: ${e.confirmedPaymentCount} bill(s), principal added Rs. ${(e.confirmedPaymentAdjustment / 100).toStringAsFixed(2)}'].join('; '), width: 2.8),
-    BillingAuditColumn('missing_bill_count', 'Missing Bill Count', (e) => '${e.coverage?.missingBillCount ?? 0}'),
-    BillingAuditColumn('missing_periods', 'Missing Billing Periods', (e) => e.coverage?.missingPeriods.map((p) => p.label).join('; ') ?? '', width: 2.8),
-    BillingAuditColumn('missing_water_fee', 'Estimated Missing Water Fee', (e) => _auditAmount(e.coverage?.estimatedMissingFee)),
-    BillingAuditColumn('short_fee_count', 'Bills With Short Water Fee', (e) => '${e.coverage?.shortFees.length ?? 0}'),
-    BillingAuditColumn('short_fee_amount', 'Estimated Water Fee Shortfall', (e) => _auditAmount(e.coverage?.shortFeeAmount)),
-    BillingAuditColumn('coverage_notes', 'Billing Coverage Notes', (e) => e.coverage?.warningText(_auditAmount) ?? '', width: 3),
-    BillingAuditColumn('expected_water_fee', 'Expected Water Fee', (e) => _auditAmount(e.coverage?.expectedWaterFee)),
-    BillingAuditColumn('missing_amount', 'Total Missing Amount', (e) => _auditAmount(e.coverage?.estimatedMissingAmount)),
+    BillingAuditColumn(
+      'review',
+      'Review Reasons',
+      (e) => [
+        ...e.reviewReasons,
+        if (e.confirmedPaymentCount > 0)
+          'Confirmed sector payment exception: ${e.confirmedPaymentCount} bill(s), principal added Rs. ${(e.confirmedPaymentAdjustment / 100).toStringAsFixed(2)}',
+      ].join('; '),
+      width: 2.8,
+    ),
+    BillingAuditColumn(
+      'missing_bill_count',
+      'Missing Bill Count',
+      (e) => '${e.coverage?.missingBillCount ?? 0}',
+    ),
+    BillingAuditColumn(
+      'missing_periods',
+      'Missing Billing Periods',
+      (e) => e.coverage?.missingPeriods.map((p) => p.label).join('; ') ?? '',
+      width: 2.8,
+    ),
+    BillingAuditColumn(
+      'missing_water_fee',
+      'Estimated Missing Water Fee',
+      (e) => _auditAmount(_missingBillAmount(e, null, null)),
+      periodValue: (e, from, to) =>
+          _auditAmount(_missingBillAmount(e, from, to)),
+    ),
+    BillingAuditColumn(
+      'short_fee_count',
+      'Bills With Short Water Fee',
+      (e) => '${e.coverage?.shortFees.length ?? 0}',
+    ),
+    BillingAuditColumn(
+      'short_fee_amount',
+      'Estimated Water Fee Shortfall',
+      (e) => _auditAmount(e.coverage?.shortFeeAmount),
+    ),
+    BillingAuditColumn(
+      'coverage_notes',
+      'Billing Coverage Notes',
+      (e) => e.coverage?.warningText(_auditAmount) ?? '',
+      width: 3,
+    ),
+    BillingAuditColumn(
+      'expected_water_fee',
+      'Expected Water Fee',
+      (e) => _auditAmount(e.coverage?.expectedWaterFee),
+    ),
+    BillingAuditColumn(
+      'missing_amount',
+      'Total Missing Amount',
+      (e) => _auditAmount(_totalAmount(e, null, null)),
+      periodValue: (e, from, to) => _auditAmount(_totalAmount(e, from, to)),
+    ),
   ];
 
   static const defaultBillingAuditPdfColumns = {
-    'connection', 'consumer', 'sector', 'bills', 'paid', 'unpaid', 'water', 'receipts', 'fine_collected', 'unpaid_fine', 'balance', 'result',
+    'connection',
+    'consumer',
+    'bills',
+    'paid',
+    'unpaid',
+    'water',
+    'receipts',
+    'balance',
+    'missing_bill_amount',
+    'missing_bill_count',
+    'missing_water_fee',
+    'missing_amount',
   };
-  static const defaultMissingAmountsPdfColumns = {
-    'connection', 'consumer', 'sector', 'water', 'missing_bill_count',
-    'missing_amount', 'coverage_notes',
-  };
+  static const defaultMissingAmountsPdfColumns = defaultBillingAuditPdfColumns;
+
+  static final _wholeRupeesFormat = NumberFormat('#,##0');
+  static String _pdfWholeNumber(String raw) {
+    final match = RegExp(r'^(-?)(\d+)(?:\.(\d{1,2}))?(\*)?$').firstMatch(raw);
+    if (match == null) return raw;
+    final amount =
+        int.parse(match[2]!) * 100 +
+        int.parse((match[3] ?? '').padRight(2, '0'));
+    final rounded = (amount + 50) ~/ 100;
+    return '${_wholeRupeesFormat.format(match[1] == '-' ? -rounded : rounded)}${match[4] ?? ''}';
+  }
 
   static const periodCheckColumnKeys = {
     'selected_period',
@@ -841,25 +1334,49 @@ class ExportService {
     ),
   ];
 
-  static String billingAuditCsv(List<BillingAuditEntry> entries, {Map<String, AuditPeriodCheck> periodChecks = const {}}) {
-    final columns = [...billingAuditColumns, if (periodChecks.isNotEmpty) ...auditPeriodColumns(periodChecks)];
+  static String billingAuditCsv(
+    List<BillingAuditEntry> entries, {
+    Map<String, AuditPeriodCheck> periodChecks = const {},
+    DateTime? periodFrom,
+    DateTime? periodTo,
+  }) {
+    final columns = [
+      ...billingAuditColumns,
+      if (periodChecks.isNotEmpty) ...auditPeriodColumns(periodChecks),
+    ];
     String cell(Object value) {
       var text = value.toString();
       if (RegExp(r'^\s*[=+@-]').hasMatch(text)) text = "'$text";
       return '"${text.replaceAll('"', '""')}"';
     }
+
     final rows = <List<Object>>[
       columns.map((c) => c.label).toList(),
-      for (final e in entries) columns.map((c) => c.value(e)).toList(),
+      for (final e in entries)
+        columns.map((c) => c.valueFor(e, periodFrom, periodTo)).toList(),
     ];
     return '\ufeff${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n';
   }
 
-  Future<String?> exportBillingAudit(List<BillingAuditEntry> entries, {Map<String, AuditPeriodCheck> periodChecks = const {}}) async {
+  Future<String?> exportBillingAudit(
+    List<BillingAuditEntry> entries, {
+    Map<String, AuditPeriodCheck> periodChecks = const {},
+    DateTime? periodFrom,
+    DateTime? periodTo,
+  }) async {
     final now = DateFormat('dd-MM-yyyy_HHmm').format(DateTime.now());
     final uri = await FilePicker.saveFile(
       fileName: 'Water_Fee_Audit_$now.csv',
-      bytes: Uint8List.fromList(utf8.encode(billingAuditCsv(entries, periodChecks: periodChecks))),
+      bytes: Uint8List.fromList(
+        utf8.encode(
+          billingAuditCsv(
+            entries,
+            periodChecks: periodChecks,
+            periodFrom: periodFrom,
+            periodTo: periodTo,
+          ),
+        ),
+      ),
       dialogTitle: 'Save filtered water fee audit',
       allowedExtensions: ['csv'],
       type: FileType.custom,
@@ -871,43 +1388,198 @@ class ExportService {
     required List<BillingAuditEntry> entries,
     required Set<String> selectedColumnKeys,
     String filterSummary = 'All connections',
+    String? selectedSector,
     Map<String, AuditPeriodCheck> periodChecks = const {},
+    DateTime? periodFrom,
+    DateTime? periodTo,
   }) async {
-    final columns = [...billingAuditColumns, if (periodChecks.isNotEmpty) ...auditPeriodColumns(periodChecks)].where((c) => selectedColumnKeys.contains(c.key)).toList();
-    if (columns.isEmpty) { throw ArgumentError('Select at least one report column.'); }
+    final columns = [
+      ...billingAuditColumns,
+      if (periodChecks.isNotEmpty) ...auditPeriodColumns(periodChecks),
+    ].where((c) => selectedColumnKeys.contains(c.key)).toList();
+    if (columns.isEmpty) {
+      throw ArgumentError('Select at least one report column.');
+    }
+    final connectionColumn = columns.indexWhere((c) => c.key == 'connection');
+    if (connectionColumn >= 0) {
+      columns.insert(
+        connectionColumn,
+        BillingAuditColumn('serial', 'SR #', (_) => '', width: 0.4),
+      );
+    }
+    final totals = billingAuditTotals(
+      entries,
+      periodFrom: periodFrom,
+      periodTo: periodTo,
+    );
+    final columnTotals = billingAuditColumnTotals(
+      entries,
+      periodFrom: periodFrom,
+      periodTo: periodTo,
+    );
+    final totalLabelColumn = columns.indexWhere(
+      (column) =>
+          column.key != 'serial' && !columnTotals.containsKey(column.key),
+    );
+    String cell(BillingAuditEntry entry, BillingAuditColumn column) {
+      if (column.key == 'coverage_notes') {
+        return entry.coverage?.warningText(
+              (amount) => amount == null
+                  ? 'Needs review'
+                  : 'Rs. ${_pdfWholeNumber(_auditAmount(amount))}',
+            ) ??
+            '-';
+      }
+      final value = column.valueFor(entry, periodFrom, periodTo);
+      if (value.isEmpty) return '-';
+      return columnTotals.containsKey(column.key)
+          ? _pdfWholeNumber(value)
+          : value;
+    }
+
     final document = pw.Document();
-    final size = columns.length > 16 ? const PdfPageFormat(594 * PdfPageFormat.mm, 420 * PdfPageFormat.mm)
-        : columns.length > 12 ? PdfPageFormat.a3.landscape
-        : columns.length > 5 ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
-    final fontSize = columns.length > 12 && columns.length <= 16 ? 8.0 : 9.0;
-    document.addPage(pw.MultiPage(
-      pageFormat: size, maxPages: entries.length + 2,
-      margin: const pw.EdgeInsets.all(28),
-      theme: pw.ThemeData.withFont(base: pw.Font.helvetica(), bold: pw.Font.helveticaBold()),
-      header: (_) => pw.Padding(padding: const pw.EdgeInsets.only(bottom: 10), child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start, children: [
-          pw.Text('Water Fee Audit - Generated Bills & Recovery', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 5),
-          pw.Text(filterSummary, style: const pw.TextStyle(fontSize: 9)),
-          pw.Text('${entries.length} connections | Generated: ${DateFormat('dd-MM-yyyy HH:mm').format(DateTime.now())} | Amounts in Rs.', style: const pw.TextStyle(fontSize: 9)),
-        ])),
-      footer: (context) => pw.Padding(padding: const pw.EdgeInsets.only(top: 8), child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween, children: [
-          pw.Text('Water Balance = Water Fee - Water Received. Fines and advance credit applications are separate.', style: const pw.TextStyle(fontSize: 8)),
-          pw.Text('Page ${context.pageNumber} of ${context.pagesCount}', style: const pw.TextStyle(fontSize: 8)),
-        ])),
-      build: (_) => [pw.TableHelper.fromTextArray(
-        headers: columns.map((c) => c.label).toList(),
-        data: [for (final entry in entries) columns.map((c) => c.value(entry).isEmpty ? '-' : c.value(entry)).toList()],
-        columnWidths: {for (var i = 0; i < columns.length; i++) i: pw.FlexColumnWidth(columns[i].width)},
-        headerStyle: pw.TextStyle(fontSize: fontSize, fontWeight: pw.FontWeight.bold),
-        cellStyle: pw.TextStyle(fontSize: fontSize),
-        cellPadding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 7),
-        headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
-        cellAlignment: pw.Alignment.centerLeft,
-        border: pw.TableBorder.all(width: 0.4, color: PdfColors.grey600),
-      )],
-    ));
+    final size = columns.length > 34
+        ? const PdfPageFormat(841 * PdfPageFormat.mm, 594 * PdfPageFormat.mm)
+        : columns.length > 24
+        ? const PdfPageFormat(594 * PdfPageFormat.mm, 420 * PdfPageFormat.mm)
+        : columns.length > 12
+        ? PdfPageFormat.a3.landscape
+        : columns.length > 5
+        ? PdfPageFormat.a4.landscape
+        : PdfPageFormat.a4;
+    const fontSize = 9.0;
+    final boldCell = pw.TextStyle(
+      fontSize: fontSize,
+      fontWeight: pw.FontWeight.bold,
+    );
+    final sectors = entries
+        .map((e) => e.sector.trim())
+        .where((s) => s.isNotEmpty)
+        .toSet();
+    final sector =
+        selectedSector != null &&
+            selectedSector.trim().isNotEmpty &&
+            !selectedSector.toLowerCase().startsWith('all ')
+        ? selectedSector.trim()
+        : sectors.length == 1
+        ? sectors.single
+        : '';
+    String money(int? amount) => amount == null
+        ? 'Needs review'
+        : 'Rs. ${_pdfWholeNumber(_auditAmount(amount))}';
+    document.addPage(
+      pw.MultiPage(
+        pageFormat: size,
+        maxPages: entries.length + 2,
+        margin: const pw.EdgeInsets.all(24),
+        theme: pw.ThemeData.withFont(
+          base: pw.Font.helvetica(),
+          bold: pw.Font.helveticaBold(),
+        ),
+        build: (_) => [
+          pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.center,
+            children: [
+              pw.Text(
+                'Water Fees Shortfall',
+                style: pw.TextStyle(
+                  fontSize: 20,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              pw.SizedBox(height: 5),
+              pw.Text(
+                'Water balance: ${money(totals.waterBalance)} | '
+                'Missing bill amount: ${money(totals.missingBillAmount)} | '
+                'Total amount: ${money(totals.totalAmount)}',
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontSize: 12,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+              if (sector.isNotEmpty || (periodFrom != null && periodTo != null))
+                pw.Text(
+                  [
+                    if (sector.isNotEmpty) sector,
+                    if (periodFrom != null && periodTo != null)
+                      '${DateFormat('dd/MM/yyyy').format(periodFrom)} - ${DateFormat('dd/MM/yyyy').format(periodTo)}',
+                  ].join(' | '),
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              pw.SizedBox(height: 10),
+            ],
+          ),
+          pw.TableHelper.fromTextArray(
+            headers: [
+              for (final c in columns)
+                pw.Text(
+                  c.label,
+                  textAlign: pw.TextAlign.center,
+                  softWrap: true,
+                  style: boldCell,
+                ),
+            ],
+            data: [
+              for (var row = 0; row < entries.length; row++)
+                columns
+                    .map(
+                      (c) => c.key == 'serial'
+                          ? '${row + 1}'
+                          : c.key == 'consumer'
+                          ? pw.Container(
+                              alignment: pw.Alignment.centerLeft,
+                              child: pw.Text(
+                                cell(entries[row], c),
+                                textAlign: pw.TextAlign.left,
+                                style: const pw.TextStyle(fontSize: fontSize),
+                              ),
+                            )
+                          : cell(entries[row], c),
+                    )
+                    .toList(),
+              [
+                for (var i = 0; i < columns.length; i++)
+                  i == totalLabelColumn
+                      ? 'TOTAL'
+                      : totalLabelColumn < 0 && i == 0
+                      ? 'TOTAL\n${_pdfWholeNumber(columnTotals[columns[i].key] ?? '')}'
+                      : _pdfWholeNumber(columnTotals[columns[i].key] ?? ''),
+              ],
+            ],
+            columnWidths: {
+              for (var i = 0; i < columns.length; i++)
+                i: columns[i].key == 'serial'
+                    ? const pw.FixedColumnWidth(30)
+                    : pw.FlexColumnWidth(columns[i].width),
+            },
+            headerStyle: pw.TextStyle(
+              fontSize: fontSize,
+              fontWeight: pw.FontWeight.bold,
+            ),
+            cellStyle: pw.TextStyle(fontSize: fontSize),
+            textStyleBuilder: (_, _, row) => row == entries.length + 1
+                ? boldCell
+                : const pw.TextStyle(fontSize: fontSize),
+            cellDecoration: (_, _, row) => row == entries.length + 1
+                ? const pw.BoxDecoration(color: PdfColors.grey200)
+                : const pw.BoxDecoration(),
+            cellPadding: const pw.EdgeInsets.symmetric(
+              horizontal: 3,
+              vertical: 3,
+            ),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
+            headerAlignment: pw.Alignment.center,
+            cellAlignment: pw.Alignment.center,
+            border: pw.TableBorder.all(width: 0.4, color: PdfColors.grey600),
+          ),
+        ],
+      ),
+    );
     return document.save();
   }
 
@@ -939,22 +1611,24 @@ class ExportService {
         return val;
       }
 
-      buffer.writeln([
-        c.srNo,
-        sanitize(c.consumerName),
-        sanitize(c.fatherHusbandName),
-        sanitize(c.mobile),
-        sanitize(c.sector),
-        sanitize(c.locality),
-        sanitize(c.address),
-        sanitize(c.orderNo),
-        sanitize(c.rateType),
-        sanitize(c.connectionNo),
-        sanitize(c.oldConnectionNo),
-        sanitize(c.connectionDate),
-        sanitize(c.connectionStatus),
-        sanitize(c.consumerStatus),
-      ].join(','));
+      buffer.writeln(
+        [
+          c.srNo,
+          sanitize(c.consumerName),
+          sanitize(c.fatherHusbandName),
+          sanitize(c.mobile),
+          sanitize(c.sector),
+          sanitize(c.locality),
+          sanitize(c.address),
+          sanitize(c.orderNo),
+          sanitize(c.rateType),
+          sanitize(c.connectionNo),
+          sanitize(c.oldConnectionNo),
+          sanitize(c.connectionDate),
+          sanitize(c.connectionStatus),
+          sanitize(c.consumerStatus),
+        ].join(','),
+      );
     }
 
     final bytes = Uint8List.fromList(utf8.encode(buffer.toString()));
@@ -975,7 +1649,8 @@ class ExportService {
     String? fileNamePrefix,
   }) async {
     final now = DateFormat('dd-MM-yyyy_HHmm').format(DateTime.now());
-    final defaultFileName = '${fileNamePrefix ?? "Connection_Numbers"}_$now.csv';
+    final defaultFileName =
+        '${fileNamePrefix ?? "Connection_Numbers"}_$now.csv';
 
     final buffer = StringBuffer();
     // CSV Header: Connection No
@@ -984,7 +1659,9 @@ class ExportService {
     for (final connNo in connectionNumbers) {
       final trimmed = connNo.trim();
       if (trimmed.isEmpty) continue;
-      if (trimmed.contains(',') || trimmed.contains('"') || trimmed.contains('\n')) {
+      if (trimmed.contains(',') ||
+          trimmed.contains('"') ||
+          trimmed.contains('\n')) {
         buffer.writeln('"${trimmed.replaceAll('"', '""')}"');
       } else {
         buffer.writeln(trimmed);

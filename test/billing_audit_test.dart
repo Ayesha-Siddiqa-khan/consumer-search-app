@@ -564,6 +564,8 @@ void main() {
         EnginePhase.sendSemanticsUpdate,
         const Duration(seconds: 3),
       );
+      await tester.tap(find.text('Billing period, sessions & amount filters'));
+      await tester.pumpAndSettle();
       expect(find.text('Consumer MATCH'), findsNothing);
       expect(find.text('Consumer NEW'), findsNothing);
       Future<void> select(String current, String next) async {
@@ -756,6 +758,10 @@ void main() {
           EnginePhase.sendSemanticsUpdate,
           const Duration(seconds: 3),
         );
+        await tester.tap(
+          find.text('Billing period, sessions & amount filters'),
+        );
+        await tester.pumpAndSettle();
         final vertical = tester
             .state<ScrollableState>(
               find
@@ -932,6 +938,8 @@ void main() {
         () => Future<void>.delayed(const Duration(milliseconds: 250)),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.text('Billing period, sessions & amount filters'));
+      await tester.pumpAndSettle();
       expect(find.text('Generated bills & water fee recovery'), findsOneWidget);
       expect(find.text('Generated bills: 2'), findsOneWidget);
       expect(find.text('Consumer SHORT'), findsOneWidget);
@@ -969,6 +977,16 @@ void main() {
       expect(
         find.text(
           'Export all 1 filtered connections in the current sort order.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Missing Bill Amount'), findsOneWidget);
+      expect(find.text('Total Amount'), findsOneWidget);
+      await tester.tap(find.text('Select all'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          '${ExportService.billingAuditColumns.length + ExportService.periodCheckColumnKeys.length} columns selected',
         ),
         findsOneWidget,
       );
