@@ -8,6 +8,8 @@ class SearchableSelectField extends StatelessWidget {
   final ValueChanged<String> onChanged;
   final double? width;
   final String allItemLabel;
+  final Set<String>? selectedValues;
+  final ValueChanged<Set<String>>? onMultiChanged;
 
   const SearchableSelectField({
     super.key,
@@ -17,6 +19,8 @@ class SearchableSelectField extends StatelessWidget {
     required this.onChanged,
     this.width,
     this.allItemLabel = 'All',
+    this.selectedValues,
+    this.onMultiChanged,
   });
 
   void _openSearchDialog(BuildContext context) {
@@ -28,6 +32,13 @@ class SearchableSelectField extends StatelessWidget {
           currentValue: value,
           items: items,
           allItemLabel: allItemLabel,
+          selectedValues: selectedValues,
+          onMultiSelected: onMultiChanged == null
+              ? null
+              : (selected) {
+                  Navigator.of(ctx).pop();
+                  onMultiChanged!(selected);
+                },
           onSelected: (selected) {
             Navigator.of(ctx).pop();
             onChanged(selected);
@@ -39,8 +50,14 @@ class SearchableSelectField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDefault = value.startsWith('All ');
-    final displayText = value.isNotEmpty ? value : allItemLabel;
+    final isDefault = selectedValues != null
+        ? selectedValues!.isEmpty
+        : value.startsWith('All ');
+    final displayText = selectedValues != null && selectedValues!.isNotEmpty
+        ? '${selectedValues!.length} sectors selected'
+        : value.isNotEmpty
+        ? value
+        : allItemLabel;
 
     return SizedBox(
       width: width,
@@ -51,7 +68,10 @@ class SearchableSelectField extends StatelessWidget {
           decoration: InputDecoration(
             labelText: label,
             isDense: true,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 8,
+            ),
             suffixIcon: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -82,6 +102,8 @@ class _SearchableDialog extends StatefulWidget {
   final List<String> items;
   final String allItemLabel;
   final ValueChanged<String> onSelected;
+  final Set<String>? selectedValues;
+  final ValueChanged<Set<String>>? onMultiSelected;
 
   const _SearchableDialog({
     required this.label,
@@ -89,6 +111,8 @@ class _SearchableDialog extends StatefulWidget {
     required this.items,
     required this.allItemLabel,
     required this.onSelected,
+    this.selectedValues,
+    this.onMultiSelected,
   });
 
   @override
@@ -98,11 +122,22 @@ class _SearchableDialog extends StatefulWidget {
 class _SearchableDialogState extends State<_SearchableDialog> {
   final TextEditingController _searchCtrl = TextEditingController();
   List<String> _filteredItems = [];
+  late bool _multiple;
+  late Set<String> _selected;
+  List<String> get _choices =>
+      widget.items.where((item) => item != widget.allItemLabel).toList();
 
   @override
   void initState() {
     super.initState();
     _filteredItems = List.from(widget.items);
+    _multiple = widget.selectedValues != null;
+    _selected = {
+      ...?widget.selectedValues,
+      if (widget.selectedValues == null &&
+          widget.currentValue != widget.allItemLabel)
+        widget.currentValue,
+    };
   }
 
   @override
@@ -170,7 +205,11 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    icon: const Icon(
+                      Icons.close,
+                      color: Colors.white,
+                      size: 20,
+                    ),
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     onPressed: () => Navigator.of(context).pop(),
@@ -178,6 +217,26 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                 ],
               ),
             ),
+
+            if (widget.onMultiSelected != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Single sector'),
+                      selected: !_multiple,
+                      onSelected: (_) => setState(() => _multiple = false),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Checkboxes'),
+                      selected: _multiple,
+                      onSelected: (_) => setState(() => _multiple = true),
+                    ),
+                  ],
+                ),
+              ),
 
             // Search input field with auto-focus
             Padding(
@@ -187,7 +246,11 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Type to filter e.g. B, Waris, Colony...',
-                  prefixIcon: const Icon(Icons.search, size: 20, color: AppTheme.primaryGreen),
+                  prefixIcon: const Icon(
+                    Icons.search,
+                    size: 20,
+                    color: AppTheme.primaryGreen,
+                  ),
                   suffixIcon: _searchCtrl.text.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.clear, size: 18),
@@ -198,7 +261,10 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                         )
                       : null,
                   isDense: true,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
                 ),
                 onChanged: _filter,
               ),
@@ -212,11 +278,21 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                 children: [
                   Text(
                     '$totalMatches options found',
-                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
-                  if (widget.currentValue.isNotEmpty && !widget.currentValue.startsWith('All '))
+                  if (_multiple ||
+                      (widget.currentValue.isNotEmpty &&
+                          !widget.currentValue.startsWith('All ')))
                     InkWell(
                       onTap: () {
+                        if (_multiple) {
+                          setState(() => _selected.clear());
+                          return;
+                        }
                         // Reset to first item (e.g. All Sectors)
                         if (widget.items.isNotEmpty) {
                           widget.onSelected(widget.items.first);
@@ -224,7 +300,11 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                       },
                       child: const Text(
                         'Reset Filter',
-                        style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.red,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                 ],
@@ -239,11 +319,18 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.search_off, size: 36, color: Colors.grey.shade400),
+                          Icon(
+                            Icons.search_off,
+                            size: 36,
+                            color: Colors.grey.shade400,
+                          ),
                           const SizedBox(height: 8),
                           Text(
                             'No matching ${widget.label.toLowerCase()}s found',
-                            style: const TextStyle(fontSize: 13, color: Colors.grey),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey,
+                            ),
                           ),
                         ],
                       ),
@@ -256,26 +343,88 @@ class _SearchableDialogState extends State<_SearchableDialog> {
                           final item = _filteredItems[idx];
                           final isSelected = item == widget.currentValue;
 
+                          if (_multiple) {
+                            final all = item == widget.allItemLabel;
+                            final checked = all
+                                ? _choices.isNotEmpty &&
+                                      _selected.containsAll(_choices)
+                                : _selected.contains(item);
+                            return CheckboxListTile(
+                              dense: true,
+                              controlAffinity: ListTileControlAffinity.leading,
+                              title: Text(
+                                item,
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                              value: checked,
+                              onChanged: (checked) => setState(() {
+                                if (all) {
+                                  _selected = checked == true
+                                      ? _choices.toSet()
+                                      : {};
+                                } else if (checked == true) {
+                                  _selected.add(item);
+                                } else {
+                                  _selected.remove(item);
+                                }
+                              }),
+                            );
+                          }
+
                           return ListTile(
                             dense: true,
                             title: Text(
                               item,
                               style: TextStyle(
                                 fontSize: 13,
-                                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-                                color: isSelected ? AppTheme.primaryGreen : Colors.black87,
+                                fontWeight: isSelected
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
+                                color: isSelected
+                                    ? AppTheme.primaryGreen
+                                    : Colors.black87,
                               ),
                             ),
                             trailing: isSelected
-                                ? const Icon(Icons.check, size: 18, color: AppTheme.primaryGreen)
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 18,
+                                    color: AppTheme.primaryGreen,
+                                  )
                                 : null,
-                            tileColor: isSelected ? AppTheme.primaryGreen.withAlpha(20) : null,
+                            tileColor: isSelected
+                                ? AppTheme.primaryGreen.withAlpha(20)
+                                : null,
                             onTap: () => widget.onSelected(item),
                           );
                         },
                       ),
                     ),
             ),
+            if (_multiple)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        _selected.isEmpty
+                            ? 'All sectors (no selection)'
+                            : '${_selected.length} sectors selected',
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('Cancel'),
+                    ),
+                    FilledButton(
+                      onPressed: () =>
+                          widget.onMultiSelected!(Set.of(_selected)),
+                      child: const Text('Apply'),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

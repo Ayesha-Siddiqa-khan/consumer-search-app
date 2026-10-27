@@ -526,6 +526,65 @@ void main() {
       await tester.tap(find.text('Reset Filter'));
       await tester.pumpAndSettle();
       expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 5);
+      await tester.tap(find.text('All sectors'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Checkboxes'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'Hafiz Hotel'));
+      await tester.enterText(dialogSearch, 'hussain');
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'Hussain Colony'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 2);
+      expect(find.text('Consumer COMPLETE'), findsOneWidget);
+      expect(find.text('Consumer MISSING'), findsOneWidget);
+      expect(find.text('Consumer ABOVE'), findsNothing);
+      await tester.ensureVisible(find.text('Export PDF / choose columns'));
+      await tester.tap(find.text('Export PDF / choose columns'));
+      await tester.pumpAndSettle();
+      final combined = tester.widget<BillingAuditPdfDialog>(
+        find.byType(BillingAuditPdfDialog),
+      );
+      expect(
+        combined.entries.map((e) => e.connectionNo),
+        unorderedEquals(['COMPLETE', 'MISSING']),
+      );
+      expect(combined.selectedSector, 'Hafiz Hotel, Hussain Colony');
+      expect(
+        ExportService.billingAuditTotals(combined.entries).waterBalance,
+        combined.entries.fold<int>(0, (sum, e) => sum + e.payableBalance!),
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('2 sectors selected'));
+      await tester.tap(find.text('2 sectors selected'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<CheckboxListTile>(
+              find.widgetWithText(CheckboxListTile, 'Hafiz Hotel'),
+            )
+            .value,
+        isTrue,
+      );
+      await tester.tap(find.widgetWithText(CheckboxListTile, 'Hafiz Hotel'));
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 2);
+      await tester.tap(find.text('2 sectors selected'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Single sector'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.text('Gulberg Town'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.widget<DataTable>(find.byType(DataTable)).rows.length, 1);
+      expect(find.text('Consumer EXACT'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     },

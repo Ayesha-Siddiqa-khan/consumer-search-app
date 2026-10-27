@@ -43,6 +43,10 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   bool _ascending = false;
   String _category = 'Domestic';
   String _sector = 'All sectors';
+  Set<String>? _selectedSectors;
+  String get _sectorLabel => _selectedSectors?.isNotEmpty == true
+      ? (_selectedSectors!.toList()..sort()).join(', ')
+      : _sector;
   String _result = 'All results';
   String _billGroup = 'regular';
   String _connectionStatus = 'Regular Connection';
@@ -184,6 +188,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
       _consumerStatus,
       _billStatus,
       _sector,
+      _selectedSectors,
       _result,
       _missingBalance,
       _generatedFeeThreshold.text,
@@ -218,7 +223,10 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                   normalized(e.currentBillStatus) == billStatus ||
                   (_billStatus == 'Un-Paid' &&
                       normalized(e.currentBillStatus) == 'expired')) &&
-              (_sector == 'All sectors' || e.sector == _sector) &&
+              (_selectedSectors != null
+                  ? _selectedSectors!.isEmpty ||
+                        _selectedSectors!.contains(e.sector)
+                  : _sector == 'All sectors' || e.sector == _sector) &&
               (!_checkingPeriod ||
                   ((_periodPresence == 'All period results' ||
                           (_periodPresence == 'Period present'
@@ -804,7 +812,15 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                         items: ['All sectors', ...sectors],
                         allItemLabel: 'All sectors',
                         width: 210,
-                        onChanged: (v) => _filter(() => _sector = v),
+                        selectedValues: _selectedSectors,
+                        onChanged: (v) => _filter(() {
+                          _selectedSectors = null;
+                          _sector = v;
+                        }),
+                        onMultiChanged: (values) => _filter(() {
+                          _selectedSectors = Set.unmodifiable(values);
+                          _sector = 'All sectors';
+                        }),
                       ),
                       _dropdown(
                         'Result',
@@ -1010,7 +1026,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                 barrierDismissible: false,
                                 builder: (_) => BillingAuditPdfDialog(
                                   entries: rows,
-                                  selectedSector: _sector,
+                                  selectedSector: _sectorLabel,
                                   periodChecks: _checks,
                                   periodFrom: _coverageFrom,
                                   periodTo: _coverageTo,
@@ -1019,7 +1035,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                             .defaultMissingAmountsPdfColumns
                                       : null,
                                   filterSummary:
-                                      '${billingAuditGroups[_billGroup]} | $_category | $_sector | $_result${_missingAmountsView ? ' | $_missingBalance' : ''}${_missingAmountsView && _generatedFeeThreshold.text.trim().isNotEmpty ? ' | Generated water fee > ${_money(_minimumGeneratedFee)}' : ''} | $_billStatus | $_connectionStatus | $_consumerStatus${_search.text.trim().isEmpty ? '' : ' | Search: ${_search.text.trim()}'}${_extraFilterSummary.isEmpty ? '' : ' | $_extraFilterSummary'}',
+                                      '${billingAuditGroups[_billGroup]} | $_category | $_sectorLabel | $_result${_missingAmountsView ? ' | $_missingBalance' : ''}${_missingAmountsView && _generatedFeeThreshold.text.trim().isNotEmpty ? ' | Generated water fee > ${_money(_minimumGeneratedFee)}' : ''} | $_billStatus | $_connectionStatus | $_consumerStatus${_search.text.trim().isEmpty ? '' : ' | Search: ${_search.text.trim()}'}${_extraFilterSummary.isEmpty ? '' : ' | $_extraFilterSummary'}',
                                 ),
                               ),
                         icon: const Icon(Icons.picture_as_pdf),
