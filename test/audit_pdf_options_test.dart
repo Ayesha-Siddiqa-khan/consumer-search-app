@@ -300,6 +300,10 @@ void main() {
         );
         expect(pages.first, isNot(contains('Very long selected sector name')));
         expect(
+          pages.first,
+          contains('Grand total | Water balance: Rs. 196,800'),
+        );
+        expect(
           RegExp('Water Fees Shortfall').allMatches(pages.join(' ')).length,
           1,
         );

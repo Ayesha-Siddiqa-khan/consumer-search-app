@@ -1480,6 +1480,7 @@ class ExportService {
     }
     if (groups.isEmpty) groups['No connections'] = [];
     final names = groups.keys.toList()..sort();
+    final grouped = names.length > 1 || employeeName != null;
     final scope = employeeName?.trim().isNotEmpty == true
         ? 'Employee: ${employeeName!.trim()}'
         : names.length > 1
@@ -1489,6 +1490,7 @@ class ExportService {
         ? selectedSector.trim()
         : names.single;
     final headerLine = [
+      if (grouped) 'Grand total',
       summary(totals),
       scope,
       if (periodFrom != null && periodTo != null)
@@ -1513,7 +1515,6 @@ class ExportService {
       final name = names[groupIndex];
       final rows = groups[name]!;
       final last = groupIndex == names.length - 1;
-      final grouped = names.length > 1 || employeeName != null;
       final groupTotals = billingAuditColumnTotals(
         rows,
         periodFrom: periodFrom,
@@ -1525,6 +1526,21 @@ class ExportService {
         periodTo: periodTo,
       );
       final firstSerial = offset;
+      final columnWidths = <int, pw.TableColumnWidth>{
+        for (var i = 0; i < columns.length; i++)
+          i: columns[i].key == 'serial'
+              ? const pw.FixedColumnWidth(30)
+              : pw.FlexColumnWidth(columns[i].width),
+      };
+      final headers = [
+        for (final c in columns)
+          pw.Text(
+            c.label,
+            textAlign: pw.TextAlign.center,
+            softWrap: true,
+            style: boldCell,
+          ),
+      ];
       List<String> totalRow(Map<String, String> values, String label) => [
         for (var i = 0; i < columns.length; i++)
           i == totalLabelColumn
@@ -1588,15 +1604,7 @@ class ExportService {
           ),
           build: (_) => [
             pw.TableHelper.fromTextArray(
-              headers: [
-                for (final c in columns)
-                  pw.Text(
-                    c.label,
-                    textAlign: pw.TextAlign.center,
-                    softWrap: true,
-                    style: boldCell,
-                  ),
-              ],
+              headers: headers,
               data: [
                 for (var row = 0; row < rows.length; row++)
                   columns
@@ -1616,14 +1624,8 @@ class ExportService {
                       )
                       .toList(),
                 totalRow(groupTotals, grouped ? 'SUBTOTAL' : 'TOTAL'),
-                if (last && grouped) totalRow(columnTotals, 'GRAND TOTAL'),
               ],
-              columnWidths: {
-                for (var i = 0; i < columns.length; i++)
-                  i: columns[i].key == 'serial'
-                      ? const pw.FixedColumnWidth(30)
-                      : pw.FlexColumnWidth(columns[i].width),
-              },
+              columnWidths: columnWidths,
               headerStyle: boldCell,
               cellStyle: const pw.TextStyle(fontSize: fontSize),
               textStyleBuilder: (_, _, row) => row > rows.length
@@ -1643,6 +1645,33 @@ class ExportService {
               cellAlignment: pw.Alignment.center,
               border: pw.TableBorder.all(width: 0.4, color: PdfColors.grey600),
             ),
+            if (last && grouped)
+              pw.Container(
+                padding: const pw.EdgeInsets.only(top: 14),
+                child: pw.TableHelper.fromTextArray(
+                  headers: headers,
+                  data: [totalRow(columnTotals, 'GRAND TOTAL')],
+                  columnWidths: columnWidths,
+                  headerStyle: boldCell,
+                  cellStyle: boldCell,
+                  cellPadding: const pw.EdgeInsets.symmetric(
+                    horizontal: 3,
+                    vertical: 5,
+                  ),
+                  headerDecoration: const pw.BoxDecoration(
+                    color: PdfColors.grey200,
+                  ),
+                  rowDecoration: const pw.BoxDecoration(
+                    color: PdfColors.grey300,
+                  ),
+                  headerAlignment: pw.Alignment.center,
+                  cellAlignment: pw.Alignment.center,
+                  border: pw.TableBorder.all(
+                    width: 0.6,
+                    color: PdfColors.grey600,
+                  ),
+                ),
+              ),
           ],
         ),
       );
