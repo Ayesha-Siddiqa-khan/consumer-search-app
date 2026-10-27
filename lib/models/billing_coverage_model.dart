@@ -1,4 +1,5 @@
 import 'bill_amount.dart';
+import 'audit_period_check.dart';
 
 /// Missing history is diagnostic evidence, never an additional payable charge.
 class BillingPeriodGap {
@@ -27,6 +28,7 @@ class BillingCoverage {
   final bool standardRateEstimate;
   final DateTime checkedThrough;
   final bool hasRecordedHistory;
+  final List<String> confirmations;
 
   const BillingCoverage({
     required this.missingPeriods,
@@ -38,6 +40,7 @@ class BillingCoverage {
     required this.standardRateEstimate,
     required this.checkedThrough,
     required this.hasRecordedHistory,
+    this.confirmations = const [],
   });
 
   int get missingBillCount => missingPeriods.length;
@@ -100,6 +103,7 @@ class BillingCoverage {
         'Not added to generated fees or payable balance; verify the original history.',
       );
     }
+    lines.addAll(confirmations);
     return lines.join('\n');
   }
 }
@@ -137,6 +141,20 @@ BillingCoverage buildBillingCoverage({
   final undated = <String>[];
   final rates = <int>{};
   final dated = <({String number, int start, int end, int? fee})>[];
+  final evidence = resolveAuditBillPeriods(bills, periods);
+  final confirmations = evidence.where((e) => e.confirmation != null).toList();
+  // Share presence evidence with the custom range check; corrections never
+  // enter rate estimation, fee shortfalls, receipts, or generated water fees.
+  for (final bill in evidence) {
+    if (bill.start == null || bill.end == null) continue;
+    final start = bill.start!.year * 12 + bill.start!.month - 1;
+    final end = bill.end!.year * 12 + bill.end!.month - 1;
+    for (final slot in schedule) {
+      for (var month = slot.start; month <= slot.end; month++) {
+        if (month >= start && month <= end) covered.add(month);
+      }
+    }
+  }
   for (final bill in bills) {
     final range = periods['${bill['billing_period'] ?? ''}'] ?? [];
     final number = '${bill['bill_no'] ?? ''}';
@@ -155,12 +173,6 @@ BillingCoverage buildBillingCoverage({
       continue;
     }
     final months = end - start + 1;
-    // Only intersect the requested window, even if a malformed source spans years.
-    for (final slot in schedule) {
-      for (var month = slot.start; month <= slot.end; month++) {
-        if (month >= start && month <= end) covered.add(month);
-      }
-    }
     final wholeMonths =
         range.first.day == 1 &&
         range.last.day ==
@@ -235,5 +247,6 @@ BillingCoverage buildBillingCoverage({
         ? DateTime.utc(2023, 7, 1)
         : DateTime.utc(schedule.last.end ~/ 12, schedule.last.end % 12 + 2, 0),
     hasRecordedHistory: bills.isNotEmpty,
+    confirmations: confirmations.map((e) => e.confirmation!).toList(),
   );
 }

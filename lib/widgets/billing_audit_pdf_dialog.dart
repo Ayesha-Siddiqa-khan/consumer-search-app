@@ -3,17 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
 import '../models/billing_audit_model.dart';
+import '../models/audit_period_check.dart';
 import '../services/export_service.dart';
 
 class BillingAuditPdfDialog extends StatefulWidget {
   final List<BillingAuditEntry> entries;
   final String filterSummary;
   final Set<String>? initialColumnKeys;
+  final Map<String, AuditPeriodCheck> periodChecks;
   const BillingAuditPdfDialog({
     super.key,
     required this.entries,
     required this.filterSummary,
     this.initialColumnKeys,
+    this.periodChecks = const {},
   });
 
   @override
@@ -21,9 +24,17 @@ class BillingAuditPdfDialog extends StatefulWidget {
 }
 
 class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
-  late final _selected = Set<String>.of(
-    widget.initialColumnKeys ?? ExportService.defaultBillingAuditPdfColumns,
-  );
+  late final _selected = Set<String>.of({
+    ...?widget.initialColumnKeys,
+    if (widget.initialColumnKeys == null)
+      ...ExportService.defaultBillingAuditPdfColumns,
+    if (widget.periodChecks.isNotEmpty) ...ExportService.periodCheckColumnKeys,
+  });
+  List<BillingAuditColumn> get _columns => [
+    ...ExportService.billingAuditColumns,
+    if (widget.periodChecks.isNotEmpty)
+      ...ExportService.auditPeriodColumns(widget.periodChecks),
+  ];
   bool _busy = false;
 
   Future<void> _export({bool print = false}) async {
@@ -34,6 +45,7 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
         entries: widget.entries,
         selectedColumnKeys: _selected,
         filterSummary: widget.filterSummary,
+        periodChecks: widget.periodChecks,
       );
       final name =
           'Water_Fee_Audit_${DateFormat('dd-MM-yyyy_HHmm').format(DateTime.now())}.pdf';
@@ -88,9 +100,7 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
                   onPressed: _busy
                       ? null
                       : () => setState(
-                          () => _selected.addAll(
-                            ExportService.billingAuditColumns.map((c) => c.key),
-                          ),
+                          () => _selected.addAll(_columns.map((c) => c.key)),
                         ),
                   child: const Text('Select all'),
                 ),
@@ -106,6 +116,11 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
                           _selected.addAll(
                             ExportService.defaultBillingAuditPdfColumns,
                           );
+                          if (widget.periodChecks.isNotEmpty) {
+                            _selected.addAll(
+                              ExportService.periodCheckColumnKeys,
+                            );
+                          }
                         }),
                   child: const Text('Reset defaults'),
                 ),
@@ -115,7 +130,7 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
               child: SingleChildScrollView(
                 child: Wrap(
                   children: [
-                    for (final column in ExportService.billingAuditColumns)
+                    for (final column in _columns)
                       SizedBox(
                         width: 330,
                         child: CheckboxListTile(

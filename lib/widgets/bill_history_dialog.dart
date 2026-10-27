@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../models/bill_history_model.dart';
 import '../models/history_bill_balance.dart';
 import '../models/billing_audit_model.dart';
+import '../models/audit_period_check.dart';
 import '../services/bill_import_service.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
@@ -16,12 +17,18 @@ class BillHistoryDialog extends StatefulWidget {
   final String initialConnectionNo;
   final DatabaseService? database;
   final VoidCallback? onHistoryChanged;
+  final DateTime? auditPeriodFrom;
+  final DateTime? auditPeriodTo;
+  final String auditBillGroup;
 
   const BillHistoryDialog({
     super.key,
     required this.initialConnectionNo,
     this.database,
     this.onHistoryChanged,
+    this.auditPeriodFrom,
+    this.auditPeriodTo,
+    this.auditBillGroup = 'all',
   });
 
   static Future<void> show({
@@ -29,6 +36,9 @@ class BillHistoryDialog extends StatefulWidget {
     required String connectionNo,
     DatabaseService? database,
     VoidCallback? onHistoryChanged,
+    DateTime? auditPeriodFrom,
+    DateTime? auditPeriodTo,
+    String auditBillGroup = 'all',
   }) {
     return showDialog(
       context: context,
@@ -37,6 +47,9 @@ class BillHistoryDialog extends StatefulWidget {
         initialConnectionNo: connectionNo,
         database: database,
         onHistoryChanged: onHistoryChanged,
+        auditPeriodFrom: auditPeriodFrom,
+        auditPeriodTo: auditPeriodTo,
+        auditBillGroup: auditBillGroup,
       ),
     );
   }
@@ -58,6 +71,7 @@ class _BillHistoryDialogState extends State<BillHistoryDialog> {
   Map<String, String>? _consumerDetail;
   List<BillHistory> _bills = [];
   BillingAuditEntry? _financialAudit;
+  AuditPeriodCheck? _selectedPeriodCheck;
   int _currentPage = 1;
   int _pageSize = 10;
   final List<int> _pageSizeOptions = [10, 20, 50, 100];
@@ -97,12 +111,28 @@ class _BillHistoryDialogState extends State<BillHistoryDialog> {
       final sortedList = List<BillHistory>.of(rawList)
         ..sort(compareHistoryBillsNewestFirst);
       final audit = await database.getBillingAudit(connectionNo: connNo);
+      final selectedAudit =
+          widget.auditPeriodFrom != null && widget.auditBillGroup != 'all'
+          ? await database.getBillingAudit(
+              connectionNo: connNo,
+              billGroup: widget.auditBillGroup,
+            )
+          : audit;
+      final selectedCheck =
+          widget.auditPeriodFrom != null && widget.auditPeriodTo != null
+          ? checkAuditPeriod(
+              selectedAudit.firstOrNull?.periodBills ?? [],
+              widget.auditPeriodFrom!,
+              widget.auditPeriodTo!,
+            )
+          : null;
 
       if (mounted) {
         setState(() {
           _consumerDetail = detail;
           _bills = sortedList;
           _financialAudit = audit.isEmpty ? null : audit.single;
+          _selectedPeriodCheck = selectedCheck;
           _isLoading = false;
         });
       }
@@ -821,6 +851,35 @@ class _BillHistoryDialogState extends State<BillHistoryDialog> {
             },
           ),
           const SizedBox(height: 8),
+          if (_selectedPeriodCheck != null)
+            Container(
+              key: const ValueKey('selected-audit-period-coverage'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 8),
+              color: _selectedPeriodCheck!.present
+                  ? const Color(0xFFECFDF5)
+                  : const Color(0xFFFEF2F2),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Selected audit range (${billingAuditGroups[widget.auditBillGroup]})',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  SelectableText(_selectedPeriodCheck!.details),
+                ],
+              ),
+            ),
+          if (audit.coverage?.confirmations.isNotEmpty ?? false)
+            Container(
+              key: const ValueKey('billing-coverage-confirmation'),
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 8),
+              color: const Color(0xFFEFF6FF),
+              child: Text(audit.coverage!.confirmations.join('\n')),
+            ),
           if (audit.coverage?.hasWarning ?? false) ...[
             Container(
               key: const ValueKey('billing-coverage-warning'),
@@ -833,9 +892,12 @@ class _BillHistoryDialogState extends State<BillHistoryDialog> {
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                audit.coverage!.warningText(_auditMoney),
-                style: const TextStyle(fontSize: 12, color: Color(0xFFB91C1C),
-                    fontWeight: FontWeight.w600),
+                'Full-history coverage since July 2023 (independent of the selected audit range)\n${audit.coverage!.warningText(_auditMoney)}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFFB91C1C),
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ],
@@ -959,6 +1021,11 @@ class _BillHistoryDialogState extends State<BillHistoryDialog> {
         Expanded(
           child: CopyableText(
             value,
+            showIcon: {
+              'Connection No',
+              'Consumer Name',
+              'Consumer F/H Name',
+            }.contains(label),
             style: TextStyle(
               fontSize: 12,
               fontWeight: isBoldValue ? FontWeight.bold : FontWeight.w500,

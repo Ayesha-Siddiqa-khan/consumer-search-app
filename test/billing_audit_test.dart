@@ -687,10 +687,10 @@ void main() {
           findsNothing,
         );
         final table = tester.widget<DataTable>(find.byType(DataTable));
-        expect(table.columns.length, 14);
-        expect(table.columns[11].headingRowAlignment, MainAxisAlignment.center);
+        expect(table.columns.length, 16);
+        expect(table.columns[13].headingRowAlignment, MainAxisAlignment.center);
         for (final row in table.rows) {
-          final cell = row.cells[11].child;
+          final cell = row.cells[13].child;
           expect(cell, isA<Center>());
           final count = find.descendant(
             of: find.byWidget(cell),
@@ -1021,7 +1021,10 @@ void main() {
       expect(find.text('Consumer MATCH'), findsOneWidget);
       expect(find.text('Consumer SHORT'), findsNothing);
       expect(find.text('No water balance'), findsOneWidget);
-      await tester.enterText(find.byType(TextField), 'nonexistent');
+      await tester.enterText(
+        find.byKey(const ValueKey('audit-text-search')),
+        'nonexistent',
+      );
       await tester.pumpAndSettle();
       expect(find.text('No connections match these filters.'), findsOneWidget);
       await tester.binding.setSurfaceSize(const Size(600, 900));

@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/billing_audit_model.dart';
+import '../models/audit_period_check.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bill_history_dialog.dart';
 import '../widgets/billing_audit_pdf_dialog.dart';
 import '../widgets/copyable_text.dart';
+import '../widgets/searchable_select_field.dart';
 
 class BillingAuditScreen extends StatefulWidget {
   const BillingAuditScreen({super.key, this.database});
@@ -20,6 +22,15 @@ class BillingAuditScreen extends StatefulWidget {
 class _BillingAuditScreenState extends State<BillingAuditScreen> {
   final _search = TextEditingController();
   final _generatedFeeThreshold = TextEditingController();
+  final _amountThreshold = TextEditingController();
+  late final _billingSessions = auditBillingSessions(DateTime.now());
+  late DateTime _periodFrom = _billingSessions.first.start;
+  late DateTime _periodTo = _billingSessions.first.end;
+  String _periodPresence = 'All period results';
+  String _sessionCoverage = 'All session results';
+  String _amountField = 'Water balance';
+  Object? _periodChecksKey;
+  Map<String, AuditPeriodCheck> _periodChecks = {};
   final _number = NumberFormat('#,##0.##');
   List<BillingAuditEntry> _entries = [];
   bool _loading = true;
@@ -44,6 +55,39 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   bool get _missingAmountsView => _result == 'Missing amounts';
   int? get _minimumGeneratedFee =>
       auditAmountInPaisa(_generatedFeeThreshold.text);
+  bool get _checkingPeriod =>
+      _periodPresence != 'All period results' ||
+      _sessionCoverage != 'All session results';
+
+  Map<String, AuditPeriodCheck> get _checks {
+    if (!_checkingPeriod) return const {};
+    final key = (_entries, _periodFrom, _periodTo);
+    if (_periodChecksKey != key) {
+      _periodChecksKey = key;
+      _periodChecks = {
+        for (final e in _entries)
+          e.connectionNo: checkAuditPeriod(
+            e.periodBills,
+            _periodFrom,
+            _periodTo,
+          ),
+      };
+    }
+    return _periodChecks;
+  }
+
+  int? _amount(BillingAuditEntry e) => switch (_amountField) {
+    'Generated water fee' => e.waterFee,
+    'Amount received (water)' => e.waterReceived,
+    _ => e.payableBalance,
+  };
+
+  String get _extraFilterSummary => [
+    if (_checkingPeriod)
+      '${auditDateLabel(_periodFrom)} - ${auditDateLabel(_periodTo)} | $_periodPresence | $_sessionCoverage',
+    if (_amountThreshold.text.trim().isNotEmpty)
+      '$_amountField > ${_money(auditAmountInPaisa(_amountThreshold.text))}',
+  ].join(' | ');
 
   @override
   void initState() {
@@ -61,6 +105,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   void dispose() {
     _search.dispose();
     _generatedFeeThreshold.dispose();
+    _amountThreshold.dispose();
     super.dispose();
   }
 
@@ -107,6 +152,20 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   String _money(int? paisa) =>
       paisa == null ? '—' : 'Rs. ${_number.format(paisa / 100)}';
 
+  /// Cost of the billing periods the result review reports as missing.
+  int? _missingBillAmount(BillingAuditEntry entry) {
+    final coverage = entry.coverage;
+    if (coverage == null) return null;
+    return coverage.missingPeriods.isEmpty ? 0 : coverage.estimatedMissingFee;
+  }
+
+  /// Water balance plus the estimated cost of missing bills; displayed only.
+  int? _totalAmount(BillingAuditEntry entry) {
+    final balance = entry.payableBalance;
+    final missing = _missingBillAmount(entry);
+    return balance == null || missing == null ? null : balance + missing;
+  }
+
   List<BillingAuditEntry> get _filtered {
     final key = (
       _entries,
@@ -119,6 +178,12 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
       _result,
       _missingBalance,
       _generatedFeeThreshold.text,
+      _periodFrom,
+      _periodTo,
+      _periodPresence,
+      _sessionCoverage,
+      _amountField,
+      _amountThreshold.text,
       _sortColumn,
       _ascending,
     );
@@ -130,6 +195,8 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
     final billStatus = normalized(_billStatus);
     final query = _search.text.trim().toLowerCase();
     final minimumGeneratedFee = _minimumGeneratedFee;
+    final checks = _checks;
+    final minimumAmount = auditAmountInPaisa(_amountThreshold.text);
     final rows = _entries
         .where(
           (e) =>
@@ -143,6 +210,19 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                   (_billStatus == 'Un-Paid' &&
                       normalized(e.currentBillStatus) == 'expired')) &&
               (_sector == 'All sectors' || e.sector == _sector) &&
+              (!_checkingPeriod ||
+                  ((_periodPresence == 'All period results' ||
+                          (_periodPresence == 'Period present'
+                              ? checks[e.connectionNo]!.present
+                              : !checks[e.connectionNo]!.present)) &&
+                      (_sessionCoverage == 'All session results' ||
+                          (_sessionCoverage == 'All sessions complete'
+                              ? checks[e.connectionNo]!.present
+                              : !checks[e.connectionNo]!.present)))) &&
+              (_amountThreshold.text.trim().isEmpty ||
+                  (minimumAmount != null &&
+                      _amount(e) != null &&
+                      _amount(e)! > minimumAmount)) &&
               (_result == 'All results' ||
                   (_result == 'Needs review'
                       ? e.needsReview
@@ -203,12 +283,21 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
               : b.fineCollected,
         ),
         11 => compareMoney(
-          _missingAmountsView ? a.coverage?.shortFeeAmount : a.paidShortCount,
-          _missingAmountsView ? b.coverage?.shortFeeAmount : b.paidShortCount,
+          _missingAmountsView
+              ? a.coverage?.shortFeeAmount
+              : _missingBillAmount(a),
+          _missingAmountsView
+              ? b.coverage?.shortFeeAmount
+              : _missingBillAmount(b),
         ),
+        12 => compareMoney(_totalAmount(a), _totalAmount(b)),
         13 => compareMoney(
-          a.coverage?.estimatedMissingAmount,
-          b.coverage?.estimatedMissingAmount,
+          _missingAmountsView
+              ? a.coverage?.estimatedMissingAmount
+              : a.paidShortCount,
+          _missingAmountsView
+              ? b.coverage?.estimatedMissingAmount
+              : b.paidShortCount,
         ),
         _ => compareMoney(a.payableBalance, b.payableBalance),
       };
@@ -254,7 +343,10 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                   ? 'Missing_Amounts_Connections'
                   : 'Unpaid_Water_Connections',
             )
-          : await ExportService.instance.exportBillingAudit(rows);
+          : await ExportService.instance.exportBillingAudit(
+              rows,
+              periodChecks: _checks,
+            );
       if (path != null && mounted) {
         ScaffoldMessenger.of(
           context,
@@ -294,6 +386,145 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
       onChanged: (v) {
         if (v != null) _filter(() => onChanged(v));
       },
+    ),
+  );
+
+  Widget _billingSessionSelect(bool start) => SizedBox(
+    key: ValueKey(start ? 'audit-period-from' : 'audit-period-to'),
+    width: 210,
+    child: DropdownButtonFormField<DateTime>(
+      key: ValueKey((start, _periodFrom, _periodTo)),
+      initialValue: start ? _periodFrom : _periodTo,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: start ? 'From: session start' : 'To: session end',
+        prefixIcon: Icon(start ? Icons.date_range : Icons.event),
+      ),
+      items: [
+        for (final session in _billingSessions)
+          if (start || !session.start.isBefore(_periodFrom))
+            DropdownMenuItem(
+              value: start ? session.start : session.end,
+              child: Text(auditDateLabel(start ? session.start : session.end)),
+            ),
+      ],
+      onChanged: (date) {
+        if (date == null) return;
+        _filter(() {
+          if (start) {
+            _periodFrom = date;
+            _periodTo = _billingSessions
+                .firstWhere((session) => session.start == date)
+                .end;
+          } else {
+            _periodTo = date;
+          }
+        });
+      },
+    ),
+  );
+
+  void _showPeriodDetails(BillingAuditEntry entry) {
+    final check = _checks[entry.connectionNo]!;
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Billing period check: ${entry.connectionNo}'),
+        content: SizedBox(
+          width: 650,
+          child: SingleChildScrollView(
+            child: SelectionArea(child: Text(check.details)),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _periodFilters() => Card(
+    child: ExpansionTile(
+      key: const ValueKey('audit-period-filters'),
+      initiallyExpanded: false,
+      title: const Text('Billing period, sessions & amount filters'),
+      subtitle: Text(
+        _extraFilterSummary.isEmpty
+            ? 'Choose six-month sessions, find present/missing bills, or filter by amount'
+            : _extraFilterSummary,
+      ),
+      childrenPadding: const EdgeInsets.all(16),
+      children: [
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _billingSessionSelect(true),
+            _billingSessionSelect(false),
+            _dropdown('Selected billing period', _periodPresence, [
+              'All period results',
+              'Period present',
+              'Period missing / incomplete',
+            ], (v) => _periodPresence = v),
+            _dropdown(
+              'Six-month session check',
+              _sessionCoverage,
+              [
+                'All session results',
+                'All sessions complete',
+                'Missing / incomplete sessions',
+              ],
+              (v) => _sessionCoverage = v,
+            ),
+            _dropdown('Amount field', _amountField, [
+              'Water balance',
+              'Generated water fee',
+              'Amount received (water)',
+            ], (v) => _amountField = v),
+            SizedBox(
+              width: 260,
+              child: TextField(
+                key: const ValueKey('audit-amount-threshold'),
+                controller: _amountThreshold,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  labelText: 'Amount above (Rs.)',
+                  hintText: 'e.g. 5000',
+                  helperText: 'Strictly greater; account totals',
+                  errorText:
+                      _amountThreshold.text.trim().isNotEmpty &&
+                          auditAmountInPaisa(_amountThreshold.text) == null
+                      ? 'Enter a valid non-negative rupee amount'
+                      : null,
+                ),
+                onChanged: (_) => _filter(() {}),
+              ),
+            ),
+            TextButton.icon(
+              onPressed: () => _filter(() {
+                _periodFrom = _billingSessions.first.start;
+                _periodTo = _billingSessions.first.end;
+                _periodPresence = 'All period results';
+                _sessionCoverage = 'All session results';
+                _amountField = 'Water balance';
+                _amountThreshold.clear();
+              }),
+              icon: const Icon(Icons.restart_alt),
+              label: const Text('Reset period & amount filters'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        const Text(
+          'Dates check imported billing periods, not issue/due/payment dates. Calendar half-years are January–June and July–December. The July, August, September and October–December 2025 bills together count as one July–December session. Only the chosen dates are checked for a partial session. Missing records are not added to payable amounts. Account totals remain unchanged; other audit filters still apply.',
+        ),
+      ],
     ),
   );
 
@@ -409,6 +640,9 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                   e.coverage!.undatedBills.isNotEmpty),
         )
         .length;
+    final missingBillTotal = sumAmount(_missingBillAmount);
+    final totalWithMissing = sumAmount(_totalAmount);
+    final unresolvedTotal = rows.where((e) => _totalAmount(e) == null).length;
     final sectors =
         _entries
             .map((e) => e.sector)
@@ -536,6 +770,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                       SizedBox(
                         width: 300,
                         child: TextField(
+                          key: const ValueKey('audit-text-search'),
                           controller: _search,
                           decoration: const InputDecoration(
                             labelText: 'Connection / name / locality',
@@ -551,10 +786,14 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                         'Commercial',
                         'Unclassified',
                       ], (v) => _category = v),
-                      _dropdown('Sector', _sector, [
-                        'All sectors',
-                        ...sectors,
-                      ], (v) => _sector = v),
+                      SearchableSelectField(
+                        label: 'Sector',
+                        value: _sector,
+                        items: ['All sectors', ...sectors],
+                        allItemLabel: 'All sectors',
+                        width: 210,
+                        onChanged: (v) => _filter(() => _sector = v),
+                      ),
                       _dropdown(
                         'Result',
                         _result,
@@ -653,6 +892,8 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 16),
+                  _periodFilters(),
                   const SizedBox(height: 16),
                   Wrap(
                     spacing: 12,
@@ -757,12 +998,13 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                 barrierDismissible: false,
                                 builder: (_) => BillingAuditPdfDialog(
                                   entries: rows,
+                                  periodChecks: _checks,
                                   initialColumnKeys: _missingAmountsView
                                       ? ExportService
                                             .defaultMissingAmountsPdfColumns
                                       : null,
                                   filterSummary:
-                                      '${billingAuditGroups[_billGroup]} | $_category | $_sector | $_result${_missingAmountsView ? ' | $_missingBalance' : ''}${_missingAmountsView && _generatedFeeThreshold.text.trim().isNotEmpty ? ' | Generated water fee > ${_money(_minimumGeneratedFee)}' : ''} | $_billStatus | $_connectionStatus | $_consumerStatus${_search.text.trim().isEmpty ? '' : ' | Search: ${_search.text.trim()}'}',
+                                      '${billingAuditGroups[_billGroup]} | $_category | $_sector | $_result${_missingAmountsView ? ' | $_missingBalance' : ''}${_missingAmountsView && _generatedFeeThreshold.text.trim().isNotEmpty ? ' | Generated water fee > ${_money(_minimumGeneratedFee)}' : ''} | $_billStatus | $_connectionStatus | $_consumerStatus${_search.text.trim().isEmpty ? '' : ' | Search: ${_search.text.trim()}'}${_extraFilterSummary.isEmpty ? '' : ' | $_extraFilterSummary'}',
                                 ),
                               ),
                         icon: const Icon(Icons.picture_as_pdf),
@@ -904,6 +1146,20 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                       numeric: true,
                                       sortable: true,
                                     ),
+                                    if (!_missingAmountsView) ...[
+                                      _column(
+                                        'Missing bill amount',
+                                        1.1,
+                                        numeric: true,
+                                        sortable: true,
+                                      ),
+                                      _column(
+                                        'Total amount',
+                                        1.05,
+                                        numeric: true,
+                                        sortable: true,
+                                      ),
+                                    ],
                                     _column(
                                       _missingAmountsView
                                           ? 'Short water fee'
@@ -917,7 +1173,11 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                       _missingAmountsView
                                           ? 'Missing periods / details'
                                           : 'Result / review',
-                                      _missingAmountsView ? 3.2 : 1.15,
+                                      _missingAmountsView
+                                          ? 3.2
+                                          : _checkingPeriod
+                                          ? 2.6
+                                          : 1.15,
                                     ),
                                     if (_missingAmountsView)
                                       _column(
@@ -944,7 +1204,10 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                         ),
                                         cells: [
                                           DataCell(
-                                            CopyableText(entry.connectionNo),
+                                            CopyableText(
+                                              entry.connectionNo,
+                                              showIcon: true,
+                                            ),
                                           ),
                                           DataCell(
                                             Tooltip(
@@ -957,6 +1220,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                                     ),
                                                 child: CopyableText(
                                                   entry.consumerName,
+                                                  showIcon: true,
                                                 ),
                                               ),
                                             ),
@@ -1039,6 +1303,40 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                               ),
                                             ),
                                           ),
+                                          if (!_missingAmountsView) ...[
+                                            DataCell(
+                                              CopyableText(
+                                                _money(
+                                                  _missingBillAmount(entry),
+                                                ),
+                                                style: TextStyle(
+                                                  color:
+                                                      (_missingBillAmount(
+                                                                entry,
+                                                              ) ??
+                                                              0) >
+                                                          0
+                                                      ? AppTheme.statusInactive
+                                                      : AppTheme.darkGreen,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              CopyableText(
+                                                _money(_totalAmount(entry)),
+                                                style: TextStyle(
+                                                  color:
+                                                      (_totalAmount(entry) ??
+                                                              0) >
+                                                          0
+                                                      ? AppTheme.statusInactive
+                                                      : AppTheme.darkGreen,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                           DataCell(
                                             Center(
                                               child: CopyableText(
@@ -1053,33 +1351,106 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                             ),
                                           ),
                                           DataCell(
-                                            _missingAmountsView
-                                                ? Padding(
+                                            Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                if (_checkingPeriod)
+                                                  Padding(
                                                     padding:
                                                         const EdgeInsets.symmetric(
-                                                          vertical: 8,
+                                                          vertical: 6,
                                                         ),
                                                     child: CopyableText(
-                                                      _missingDetails(entry),
-                                                      style: const TextStyle(
-                                                        color: AppTheme
-                                                            .statusInactive,
-                                                      ),
-                                                    ),
-                                                  )
-                                                : Tooltip(
-                                                    message: entry.reviewReasons
-                                                        .join('\n'),
-                                                    child: CopyableText(
-                                                      entry.result,
+                                                      _checks[entry
+                                                              .connectionNo]!
+                                                          .sessionSummary,
                                                       style: TextStyle(
-                                                        color: entry.needsReview
-                                                            ? AppTheme
-                                                                  .afterDueOrange
-                                                            : null,
+                                                        color:
+                                                            _checks[entry
+                                                                    .connectionNo]!
+                                                                .present
+                                                            ? AppTheme.darkGreen
+                                                            : AppTheme
+                                                                  .statusInactive,
                                                       ),
                                                     ),
                                                   ),
+                                                if (_checkingPeriod)
+                                                  Tooltip(
+                                                    message:
+                                                        _checks[entry
+                                                                .connectionNo]!
+                                                            .details,
+                                                    child: Column(
+                                                      crossAxisAlignment:
+                                                          CrossAxisAlignment
+                                                              .start,
+                                                      mainAxisSize:
+                                                          MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          _checks[entry
+                                                                  .connectionNo]!
+                                                              .presenceLabel,
+                                                        ),
+                                                        if (!_checks[entry
+                                                                .connectionNo]!
+                                                            .present)
+                                                          Text(
+                                                            'Missing: ${_checks[entry.connectionNo]!.missingSessionLabels}',
+                                                            style: const TextStyle(
+                                                              color: AppTheme
+                                                                  .statusInactive,
+                                                            ),
+                                                          ),
+                                                        TextButton(
+                                                          onPressed: () =>
+                                                              _showPeriodDetails(
+                                                                entry,
+                                                              ),
+                                                          child: const Text(
+                                                            'View session details',
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                _missingAmountsView
+                                                    ? Padding(
+                                                        padding:
+                                                            const EdgeInsets.symmetric(
+                                                              vertical: 8,
+                                                            ),
+                                                        child: CopyableText(
+                                                          _missingDetails(
+                                                            entry,
+                                                          ),
+                                                          style: const TextStyle(
+                                                            color: AppTheme
+                                                                .statusInactive,
+                                                          ),
+                                                        ),
+                                                      )
+                                                    : Tooltip(
+                                                        message: entry
+                                                            .reviewReasons
+                                                            .join('\n'),
+                                                        child: CopyableText(
+                                                          entry.result,
+                                                          style: TextStyle(
+                                                            color:
+                                                                entry
+                                                                    .needsReview
+                                                                ? AppTheme
+                                                                      .afterDueOrange
+                                                                : null,
+                                                          ),
+                                                        ),
+                                                      ),
+                                              ],
+                                            ),
                                           ),
                                           if (_missingAmountsView)
                                             DataCell(
@@ -1115,6 +1486,14 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                                   connectionNo:
                                                       entry.connectionNo,
                                                   database: widget.database,
+                                                  auditPeriodFrom:
+                                                      _checkingPeriod
+                                                      ? _periodFrom
+                                                      : null,
+                                                  auditPeriodTo: _checkingPeriod
+                                                      ? _periodTo
+                                                      : null,
+                                                  auditBillGroup: _billGroup,
                                                   onHistoryChanged: () =>
                                                       historyChanged = true,
                                                 );
@@ -1136,6 +1515,63 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                               ),
                             ),
                           ),
+                          if (!_missingAmountsView)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                              decoration: const BoxDecoration(
+                                color: AppTheme.bgLight,
+                                border: Border(
+                                  top: BorderSide(color: AppTheme.tableBorder),
+                                ),
+                              ),
+                              child: Wrap(
+                                alignment: WrapAlignment.end,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 24,
+                                runSpacing: 6,
+                                children: [
+                                  Text(
+                                    'Totals — all ${_number.format(rows.length)} filtered connection(s) (every page)',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Water balance: ${_money(totalDifference)}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Missing bill amount: ${_money(missingBillTotal)}',
+                                    style: TextStyle(
+                                      color: (missingBillTotal ?? 0) > 0
+                                          ? AppTheme.statusInactive
+                                          : AppTheme.darkGreen,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Total amount: ${_money(totalWithMissing)}',
+                                    style: TextStyle(
+                                      color: (totalWithMissing ?? 0) > 0
+                                          ? AppTheme.statusInactive
+                                          : AppTheme.darkGreen,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  if (unresolvedTotal > 0)
+                                    Text(
+                                      '$unresolvedTotal connection(s) excluded (unresolved amount)',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                ],
+                              ),
+                            ),
                           Padding(
                             padding: const EdgeInsets.all(12),
                             child: Wrap(

@@ -7,12 +7,14 @@ class CopyableText extends StatelessWidget {
   final TextStyle? style;
   final int? maxLines;
   final TextOverflow? overflow;
+  final bool showIcon;
   const CopyableText(
     this.data, {
     super.key,
     this.style,
     this.maxLines,
     this.overflow,
+    this.showIcon = false,
   });
 
   @override
@@ -42,7 +44,27 @@ class CopyableText extends StatelessWidget {
             }
           }
         },
-        child: Text(data, style: style, maxLines: maxLines, overflow: overflow),
+        child: showIcon
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      data,
+                      style: style,
+                      maxLines: maxLines,
+                      overflow: overflow,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.copy_outlined,
+                    size: 14,
+                    semanticLabel: 'Copy to clipboard',
+                  ),
+                ],
+              )
+            : Text(data, style: style, maxLines: maxLines, overflow: overflow),
       ),
     ),
   );

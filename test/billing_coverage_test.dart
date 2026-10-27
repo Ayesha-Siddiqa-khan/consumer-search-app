@@ -337,6 +337,28 @@ void main() {
       }
       await tester.pumpAndSettle();
       expect(find.text('Consumer FULL'), findsOneWidget);
+      expect(find.text('Missing bill amount'), findsOneWidget);
+      expect(find.text('Total amount'), findsOneWidget);
+      expect(
+        find.descendant(
+          of: find.byType(DataTable),
+          matching: find.text('Rs. 3,600'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(DataTable),
+          matching: find.text('Rs. 16,800'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.text('Totals — all 2 filtered connection(s) (every page)'),
+        findsOneWidget,
+      );
+      expect(find.text('Missing bill amount: Rs. 3,600'), findsOneWidget);
+      expect(find.text('Total amount: Rs. 16,800'), findsOneWidget);
       await tester.tap(
         find.widgetWithText(DropdownButtonFormField<String>, 'All results'),
       );
@@ -600,6 +622,7 @@ void main() {
           current,
         );
         await tester.ensureVisible(field);
+        await tester.pumpAndSettle();
         await tester.tap(field);
         await tester.pumpAndSettle();
         await tester.tap(find.text(next).last);

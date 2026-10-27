@@ -10,6 +10,7 @@ import '../models/consumer_model.dart';
 import '../models/bill_history_model.dart';
 import '../models/history_bill_balance.dart';
 import '../models/billing_audit_model.dart';
+import '../models/audit_period_check.dart';
 import 'database_service.dart';
 
 class ColumnOption {
@@ -799,24 +800,66 @@ class ExportService {
     'missing_amount', 'coverage_notes',
   };
 
-  static String billingAuditCsv(List<BillingAuditEntry> entries) {
+  static const periodCheckColumnKeys = {
+    'selected_period',
+    'period_presence',
+    'sessions_complete',
+    'missing_sessions',
+    'period_notes',
+  };
+
+  static List<BillingAuditColumn> auditPeriodColumns(
+    Map<String, AuditPeriodCheck> checks,
+  ) => [
+    BillingAuditColumn(
+      'selected_period',
+      'Selected Billing Period',
+      (e) => checks[e.connectionNo]?.periodLabel ?? '',
+      width: 2,
+    ),
+    BillingAuditColumn(
+      'period_presence',
+      'Selected Period Presence',
+      (e) => checks[e.connectionNo]?.presenceLabel ?? '',
+    ),
+    BillingAuditColumn(
+      'sessions_complete',
+      'Six-Month Sessions Complete',
+      (e) => checks[e.connectionNo]?.sessionSummary ?? '',
+    ),
+    BillingAuditColumn(
+      'missing_sessions',
+      'Missing / Incomplete Sessions',
+      (e) => checks[e.connectionNo]?.missingSessions ?? '',
+      width: 3,
+    ),
+    BillingAuditColumn(
+      'period_notes',
+      'Selected Period Details',
+      (e) => checks[e.connectionNo]?.details ?? '',
+      width: 3,
+    ),
+  ];
+
+  static String billingAuditCsv(List<BillingAuditEntry> entries, {Map<String, AuditPeriodCheck> periodChecks = const {}}) {
+    final columns = [...billingAuditColumns, if (periodChecks.isNotEmpty) ...auditPeriodColumns(periodChecks)];
     String cell(Object value) {
       var text = value.toString();
       if (RegExp(r'^\s*[=+@-]').hasMatch(text)) text = "'$text";
       return '"${text.replaceAll('"', '""')}"';
     }
     final rows = <List<Object>>[
-      billingAuditColumns.map((c) => c.label).toList(),
-      for (final e in entries) billingAuditColumns.map((c) => c.value(e)).toList(),
+      columns.map((c) => c.label).toList(),
+      for (final e in entries) columns.map((c) => c.value(e)).toList(),
     ];
     return '\ufeff${rows.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n';
   }
 
-  Future<String?> exportBillingAudit(List<BillingAuditEntry> entries) async {
+  Future<String?> exportBillingAudit(List<BillingAuditEntry> entries, {Map<String, AuditPeriodCheck> periodChecks = const {}}) async {
     final now = DateFormat('dd-MM-yyyy_HHmm').format(DateTime.now());
     final uri = await FilePicker.saveFile(
       fileName: 'Water_Fee_Audit_$now.csv',
-      bytes: Uint8List.fromList(utf8.encode(billingAuditCsv(entries))),
+      bytes: Uint8List.fromList(utf8.encode(billingAuditCsv(entries, periodChecks: periodChecks))),
       dialogTitle: 'Save filtered water fee audit',
       allowedExtensions: ['csv'],
       type: FileType.custom,
@@ -828,9 +871,10 @@ class ExportService {
     required List<BillingAuditEntry> entries,
     required Set<String> selectedColumnKeys,
     String filterSummary = 'All connections',
+    Map<String, AuditPeriodCheck> periodChecks = const {},
   }) async {
-    final columns = billingAuditColumns.where((c) => selectedColumnKeys.contains(c.key)).toList();
-    if (columns.isEmpty) throw ArgumentError('Select at least one report column.');
+    final columns = [...billingAuditColumns, if (periodChecks.isNotEmpty) ...auditPeriodColumns(periodChecks)].where((c) => selectedColumnKeys.contains(c.key)).toList();
+    if (columns.isEmpty) { throw ArgumentError('Select at least one report column.'); }
     final document = pw.Document();
     final size = columns.length > 16 ? const PdfPageFormat(594 * PdfPageFormat.mm, 420 * PdfPageFormat.mm)
         : columns.length > 12 ? PdfPageFormat.a3.landscape

@@ -1,4 +1,5 @@
 import 'bill_amount.dart';
+import 'audit_period_check.dart';
 import 'bill_history_model.dart';
 import 'billing_coverage_model.dart';
 import 'bill_import_model.dart'
@@ -48,6 +49,7 @@ class BillingAuditEntry {
   final bool invalidHistory;
   final List<String> reviewReasons;
   final BillingCoverage? coverage;
+  final List<AuditBillPeriod> periodBills;
 
   const BillingAuditEntry({
     required this.connectionNo,
@@ -82,6 +84,7 @@ class BillingAuditEntry {
     required this.invalidHistory,
     required this.reviewReasons,
     this.coverage,
+    this.periodBills = const [],
   });
 
   /// Difference between the two recorded columns; receipts may include fines.
@@ -467,6 +470,7 @@ List<BillingAuditEntry> buildBillingAudit({
         allocationNeedsReview: allocationNeedsReview,
         invalidHistory: invalidHistory,
         reviewReasons: reasons.toSet().toList(),
+        periodBills: resolveAuditBillPeriods(history, periods),
         coverage: billGroup == 'new_connection'
             ? null
             : buildBillingCoverage(
