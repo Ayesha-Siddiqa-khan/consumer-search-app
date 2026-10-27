@@ -1438,7 +1438,7 @@ class ExportService {
     }
 
     final document = pw.Document();
-    final size = columns.length > 34
+    var size = columns.length > 34
         ? const PdfPageFormat(841 * PdfPageFormat.mm, 594 * PdfPageFormat.mm)
         : columns.length > 24
         ? const PdfPageFormat(594 * PdfPageFormat.mm, 420 * PdfPageFormat.mm)
@@ -1467,6 +1467,22 @@ class ExportService {
     String money(int? amount) => amount == null
         ? 'Needs review'
         : 'Rs. ${_pdfWholeNumber(_auditAmount(amount))}';
+    final headerLine = [
+      'Water balance: ${money(totals.waterBalance)}',
+      'Missing bill amount: ${money(totals.missingBillAmount)}',
+      'Total amount: ${money(totals.totalAmount)}',
+      if (sector.isNotEmpty) sector,
+      if (periodFrom != null && periodTo != null)
+        '${DateFormat('dd/MM/yyyy').format(periodFrom)} - ${DateFormat('dd/MM/yyyy').format(periodTo)}',
+    ].join(' | ');
+    final headerWidth =
+        PdfFont.helveticaBold(
+          document.document,
+        ).stringMetrics(headerLine).width *
+        12;
+    if (headerWidth > size.width - 48) {
+      size = PdfPageFormat(headerWidth + 50, size.height);
+    }
     document.addPage(
       pw.MultiPage(
         pageFormat: size,
@@ -1477,42 +1493,31 @@ class ExportService {
           bold: pw.Font.helveticaBold(),
         ),
         build: (_) => [
-          pw.Column(
-            crossAxisAlignment: pw.CrossAxisAlignment.center,
-            children: [
-              pw.Text(
-                'Water Fees Shortfall',
-                style: pw.TextStyle(
-                  fontSize: 20,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              pw.SizedBox(height: 5),
-              pw.Text(
-                'Water balance: ${money(totals.waterBalance)} | '
-                'Missing bill amount: ${money(totals.missingBillAmount)} | '
-                'Total amount: ${money(totals.totalAmount)}',
-                textAlign: pw.TextAlign.center,
-                style: pw.TextStyle(
-                  fontSize: 12,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-              if (sector.isNotEmpty || (periodFrom != null && periodTo != null))
+          pw.Container(
+            width: double.infinity,
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.center,
+              children: [
                 pw.Text(
-                  [
-                    if (sector.isNotEmpty) sector,
-                    if (periodFrom != null && periodTo != null)
-                      '${DateFormat('dd/MM/yyyy').format(periodFrom)} - ${DateFormat('dd/MM/yyyy').format(periodTo)}',
-                  ].join(' | '),
-                  textAlign: pw.TextAlign.center,
+                  'Water Fees Shortfall',
                   style: pw.TextStyle(
-                    fontSize: 11,
+                    fontSize: 20,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
-              pw.SizedBox(height: 10),
-            ],
+                pw.SizedBox(height: 5),
+                pw.Text(
+                  headerLine,
+                  softWrap: false,
+                  textAlign: pw.TextAlign.center,
+                  style: pw.TextStyle(
+                    fontSize: 12,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+                pw.SizedBox(height: 10),
+              ],
+            ),
           ),
           pw.TableHelper.fromTextArray(
             headers: [

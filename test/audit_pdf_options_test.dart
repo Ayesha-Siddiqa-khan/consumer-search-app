@@ -182,6 +182,13 @@ void main() {
           for (final page in doc.pages) (await page.loadText())!.fullText,
         ];
         expect(pages.first, contains('Water Fees Shortfall'));
+        expect(
+          pages.first,
+          contains(
+            'Water balance: Rs. 432,000 | Missing bill amount: Rs. 432,000 | '
+            'Total amount: Rs. 864,000 | Chak No.46/F | 01/07/2026 - 31/12/2026',
+          ),
+        );
         expect(pages.first, contains('SR #'));
         expect(pages.last, contains('120'));
         expect(pages.first, contains('Chak No.46/F | 01/07/2026 - 31/12/2026'));
