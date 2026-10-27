@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/billing_audit_model.dart';
 import '../models/audit_period_check.dart';
+import '../models/employee_sector_assignments.dart';
 import '../services/database_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
@@ -43,6 +44,9 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   bool _ascending = false;
   String _category = 'Domestic';
   String _sector = 'All sectors';
+  String _employee = EmployeeSectorAssignments.allEmployees;
+  EmployeeSectorAssignments? _assignments;
+  Map<String, EmployeeResponsibility?> _responsibilities = {};
   Set<String>? _selectedSectors;
   String get _sectorLabel => _selectedSectors?.isNotEmpty == true
       ? (_selectedSectors!.toList()..sort()).join(', ')
@@ -125,6 +129,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
       _error = null;
     });
     try {
+      final assignments = await EmployeeSectorAssignments.load();
       final entries = await (widget.database ?? DatabaseService.instance)
           .getBillingAudit(billGroup: _billGroup, connectionNo: connectionNo);
       if (!mounted || request != _loadRequest) return;
@@ -136,6 +141,11 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                 ...entries,
               ];
         _loading = false;
+        _assignments = assignments;
+        _responsibilities = {
+          for (final entry in _entries)
+            entry.connectionNo: assignments.resolve(entry),
+        };
         if (!_entries.any((e) => e.sector == _sector)) _sector = 'All sectors';
         _page = preservePosition
             ? _page.clamp(
@@ -189,6 +199,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
       _billStatus,
       _sector,
       _selectedSectors,
+      _employee,
       _result,
       _missingBalance,
       _generatedFeeThreshold.text,
@@ -215,6 +226,13 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
         .where(
           (e) =>
               (_category == 'All categories' || e.categoryLabel == _category) &&
+              (_employee == EmployeeSectorAssignments.allEmployees ||
+                  (_employee == EmployeeSectorAssignments.unassigned
+                      ? _responsibilities[e.connectionNo] == null
+                      : _responsibilities[e.connectionNo]?.includes(
+                              _employee,
+                            ) ==
+                            true)) &&
               (_connectionStatus == 'All connection statuses' ||
                   normalized(e.connectionStatus) == connectionStatus) &&
               (_consumerStatus == 'All consumer statuses' ||
@@ -548,6 +566,77 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
     ),
   );
 
+  Widget _employeeSummary(List<BillingAuditEntry> rows) {
+    final assigned = _entries.where(
+      (entry) => _employee == EmployeeSectorAssignments.unassigned
+          ? _responsibilities[entry.connectionNo] == null
+          : _responsibilities[entry.connectionNo]?.includes(_employee) == true,
+    );
+    final teams =
+        assigned
+            .map((e) => _responsibilities[e.connectionNo]?.label)
+            .whereType<String>()
+            .toSet()
+            .toList()
+          ..sort();
+    final sectors = <String, List<BillingAuditEntry>>{};
+    for (final entry in rows) {
+      (sectors[entry.sector] ??= []).add(entry);
+    }
+    final names = sectors.keys.toList()..sort();
+    return Card(
+      child: ExpansionTile(
+        key: ValueKey('employee-summary-$_employee'),
+        initiallyExpanded: true,
+        title: Text(
+          'Responsibility: $_employee',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          '${assigned.length} assigned connections | ${rows.length} match current filters. '
+          'Shared assignments count once. Other audit filters still apply.',
+        ),
+        children: [
+          if (teams.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text('Responsible employees: ${teams.join('; ')}'),
+            ),
+          if (_employee == EmployeeSectorAssignments.unassigned)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(
+                'No unique assignment matches the sector, zone and connection number. Review the source mapping.',
+              ),
+            ),
+          for (final name in names)
+            Builder(
+              builder: (_) {
+                final values = ExportService.billingAuditTotals(
+                  sectors[name]!,
+                  periodFrom: _coverageFrom,
+                  periodTo: _coverageTo,
+                );
+                return ListTile(
+                  dense: true,
+                  title: Text(
+                    name.isEmpty ? 'Unspecified sector' : name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    '${sectors[name]!.length} connections | '
+                    'Water balance: ${_money(values.waterBalance)} | '
+                    'Missing bill amount: ${_money(values.missingBillAmount)} | '
+                    'Total: ${_money(values.totalAmount)}',
+                  ),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _metric(String label, String value, Color color, {String? note}) =>
       SizedBox(
         width: 245,
@@ -807,6 +896,23 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                         'Unclassified',
                       ], (v) => _category = v),
                       SearchableSelectField(
+                        label: 'Employee / pair',
+                        value: _employee,
+                        items:
+                            _assignments?.options ??
+                            [EmployeeSectorAssignments.allEmployees],
+                        allItemLabel: EmployeeSectorAssignments.allEmployees,
+                        width: 290,
+                        onChanged: (value) => _filter(() {
+                          _employee = value;
+                          _sector = 'All sectors';
+                          _selectedSectors = null;
+                          if (value != EmployeeSectorAssignments.allEmployees) {
+                            _category = 'All categories';
+                          }
+                        }),
+                      ),
+                      SearchableSelectField(
                         label: 'Sector',
                         value: _sector,
                         items: ['All sectors', ...sectors],
@@ -814,10 +920,12 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                         width: 210,
                         selectedValues: _selectedSectors,
                         onChanged: (v) => _filter(() {
+                          _employee = EmployeeSectorAssignments.allEmployees;
                           _selectedSectors = null;
                           _sector = v;
                         }),
                         onMultiChanged: (values) => _filter(() {
+                          _employee = EmployeeSectorAssignments.allEmployees;
                           _selectedSectors = Set.unmodifiable(values);
                           _sector = 'All sectors';
                         }),
@@ -922,6 +1030,8 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                   ),
                   const SizedBox(height: 16),
                   _periodFilters(),
+                  if (_employee != EmployeeSectorAssignments.allEmployees)
+                    _employeeSummary(rows),
                   const SizedBox(height: 16),
                   Wrap(
                     spacing: 12,
@@ -1027,6 +1137,11 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                 builder: (_) => BillingAuditPdfDialog(
                                   entries: rows,
                                   selectedSector: _sectorLabel,
+                                  employeeName:
+                                      _employee ==
+                                          EmployeeSectorAssignments.allEmployees
+                                      ? null
+                                      : _employee,
                                   periodChecks: _checks,
                                   periodFrom: _coverageFrom,
                                   periodTo: _coverageTo,

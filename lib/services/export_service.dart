@@ -946,6 +946,7 @@ class ExportService {
     List<BillingAuditEntry> entries, {
     String? selectedSector,
     String? selectedLocality,
+    String? employeeName,
     DateTime? now,
   }) {
     String selected(String? value) =>
@@ -964,7 +965,9 @@ class ExportService {
         .toSet();
     final locality = selected(selectedLocality),
         sector = selected(selectedSector);
-    final area = locality.isNotEmpty
+    final area = selected(employeeName).isNotEmpty
+        ? selected(employeeName)
+        : locality.isNotEmpty
         ? locality
         : sector.isNotEmpty
         ? sector
@@ -1389,6 +1392,7 @@ class ExportService {
     required Set<String> selectedColumnKeys,
     String filterSummary = 'All connections',
     String? selectedSector,
+    String? employeeName,
     Map<String, AuditPeriodCheck> periodChecks = const {},
     DateTime? periodFrom,
     DateTime? periodTo,
@@ -1452,139 +1456,198 @@ class ExportService {
       fontSize: fontSize,
       fontWeight: pw.FontWeight.bold,
     );
-    final sectors = entries
-        .map((e) => e.sector.trim())
-        .where((s) => s.isNotEmpty)
-        .toSet();
-    final sector =
-        selectedSector != null &&
-            selectedSector.trim().isNotEmpty &&
-            !selectedSector.toLowerCase().startsWith('all ')
-        ? selectedSector.trim()
-        : sectors.length == 1
-        ? sectors.single
-        : '';
     String money(int? amount) => amount == null
         ? 'Needs review'
         : 'Rs. ${_pdfWholeNumber(_auditAmount(amount))}';
+    String summary(
+      ({
+        int? waterBalance,
+        int? missingBillAmount,
+        int? totalAmount,
+        int unresolved,
+      })
+      value,
+    ) =>
+        'Water balance: ${money(value.waterBalance)} | '
+        'Missing bill amount: ${money(value.missingBillAmount)} | '
+        'Total amount: ${money(value.totalAmount)}';
+    final groups = <String, List<BillingAuditEntry>>{};
+    for (final entry in entries) {
+      final name = entry.sector.trim().isEmpty
+          ? 'Unspecified sector'
+          : entry.sector.trim();
+      (groups[name] ??= []).add(entry);
+    }
+    if (groups.isEmpty) groups['No connections'] = [];
+    final names = groups.keys.toList()..sort();
+    final scope = employeeName?.trim().isNotEmpty == true
+        ? 'Employee: ${employeeName!.trim()}'
+        : names.length > 1
+        ? '${names.length} sectors'
+        : selectedSector?.trim().isNotEmpty == true &&
+              !selectedSector!.toLowerCase().startsWith('all ')
+        ? selectedSector.trim()
+        : names.single;
     final headerLine = [
-      'Water balance: ${money(totals.waterBalance)}',
-      'Missing bill amount: ${money(totals.missingBillAmount)}',
-      'Total amount: ${money(totals.totalAmount)}',
-      if (sector.isNotEmpty) sector,
+      summary(totals),
+      scope,
       if (periodFrom != null && periodTo != null)
         '${DateFormat('dd/MM/yyyy').format(periodFrom)} - ${DateFormat('dd/MM/yyyy').format(periodTo)}',
     ].join(' | ');
-    final headerWidth =
-        PdfFont.helveticaBold(
-          document.document,
-        ).stringMetrics(headerLine).width *
-        12;
-    if (headerWidth > size.width - 48) {
-      size = PdfPageFormat(headerWidth + 50, size.height);
+    final boldFont = PdfFont.helveticaBold(document.document);
+    final unitWidth = boldFont.stringMetrics(headerLine).width;
+    // Long sector lists belong in their sections, never in an oversized page.
+    if (unitWidth * 9 > size.width - 48 &&
+        size.width < PdfPageFormat.a4.landscape.width) {
+      size = PdfPageFormat.a4.landscape;
     }
-    document.addPage(
-      pw.MultiPage(
-        pageFormat: size,
-        maxPages: entries.length + 2,
-        margin: const pw.EdgeInsets.all(24),
-        theme: pw.ThemeData.withFont(
-          base: pw.Font.helvetica(),
-          bold: pw.Font.helveticaBold(),
-        ),
-        build: (_) => [
-          pw.Container(
+    if (unitWidth * 9 > size.width - 48 &&
+        size.width < PdfPageFormat.a3.landscape.width) {
+      size = PdfPageFormat.a3.landscape;
+    }
+    final headerFontSize = ((size.width - 48) / unitWidth)
+        .clamp(9.0, 12.0)
+        .toDouble();
+    var offset = 0;
+    for (var groupIndex = 0; groupIndex < names.length; groupIndex++) {
+      final name = names[groupIndex];
+      final rows = groups[name]!;
+      final last = groupIndex == names.length - 1;
+      final grouped = names.length > 1 || employeeName != null;
+      final groupTotals = billingAuditColumnTotals(
+        rows,
+        periodFrom: periodFrom,
+        periodTo: periodTo,
+      );
+      final sectorTotals = billingAuditTotals(
+        rows,
+        periodFrom: periodFrom,
+        periodTo: periodTo,
+      );
+      final firstSerial = offset;
+      List<String> totalRow(Map<String, String> values, String label) => [
+        for (var i = 0; i < columns.length; i++)
+          i == totalLabelColumn
+              ? label
+              : totalLabelColumn < 0 && i == 0
+              ? '$label\n${_pdfWholeNumber(values[columns[i].key] ?? '')}'
+              : _pdfWholeNumber(values[columns[i].key] ?? ''),
+      ];
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: size,
+          maxPages: rows.length + 3,
+          margin: const pw.EdgeInsets.all(24),
+          theme: pw.ThemeData.withFont(
+            base: pw.Font.helvetica(),
+            bold: pw.Font.helveticaBold(),
+          ),
+          header: (context) => pw.Container(
             width: double.infinity,
+            padding: const pw.EdgeInsets.only(bottom: 8),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                pw.Text(
-                  'Water Fees Shortfall',
-                  style: pw.TextStyle(
-                    fontSize: 20,
-                    fontWeight: pw.FontWeight.bold,
+                if (context.pageNumber == 1) ...[
+                  pw.Text(
+                    'Water Fees Shortfall',
+                    style: pw.TextStyle(
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
                   ),
-                ),
-                pw.SizedBox(height: 5),
-                pw.Text(
-                  headerLine,
-                  softWrap: false,
-                  textAlign: pw.TextAlign.center,
-                  style: pw.TextStyle(
-                    fontSize: 12,
-                    fontWeight: pw.FontWeight.bold,
+                  pw.SizedBox(height: 5),
+                  pw.Text(
+                    headerLine,
+                    softWrap: false,
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: headerFontSize,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
                   ),
-                ),
-                pw.SizedBox(height: 10),
+                  pw.SizedBox(height: 8),
+                ],
+                if (grouped) ...[
+                  pw.Text(
+                    'Sector: $name',
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                  pw.Text(
+                    '${rows.length} connections | ${summary(sectorTotals)}',
+                    textAlign: pw.TextAlign.center,
+                    style: boldCell,
+                  ),
+                ],
               ],
             ),
           ),
-          pw.TableHelper.fromTextArray(
-            headers: [
-              for (final c in columns)
-                pw.Text(
-                  c.label,
-                  textAlign: pw.TextAlign.center,
-                  softWrap: true,
-                  style: boldCell,
-                ),
-            ],
-            data: [
-              for (var row = 0; row < entries.length; row++)
-                columns
-                    .map(
-                      (c) => c.key == 'serial'
-                          ? '${row + 1}'
-                          : c.key == 'consumer'
-                          ? pw.Container(
-                              alignment: pw.Alignment.centerLeft,
-                              child: pw.Text(
-                                cell(entries[row], c),
-                                textAlign: pw.TextAlign.left,
-                                style: const pw.TextStyle(fontSize: fontSize),
-                              ),
-                            )
-                          : cell(entries[row], c),
-                    )
-                    .toList(),
-              [
+          build: (_) => [
+            pw.TableHelper.fromTextArray(
+              headers: [
+                for (final c in columns)
+                  pw.Text(
+                    c.label,
+                    textAlign: pw.TextAlign.center,
+                    softWrap: true,
+                    style: boldCell,
+                  ),
+              ],
+              data: [
+                for (var row = 0; row < rows.length; row++)
+                  columns
+                      .map(
+                        (c) => c.key == 'serial'
+                            ? '${firstSerial + row + 1}'
+                            : c.key == 'consumer'
+                            ? pw.Container(
+                                alignment: pw.Alignment.centerLeft,
+                                child: pw.Text(
+                                  cell(rows[row], c),
+                                  textAlign: pw.TextAlign.left,
+                                  style: const pw.TextStyle(fontSize: fontSize),
+                                ),
+                              )
+                            : cell(rows[row], c),
+                      )
+                      .toList(),
+                totalRow(groupTotals, grouped ? 'SUBTOTAL' : 'TOTAL'),
+                if (last && grouped) totalRow(columnTotals, 'GRAND TOTAL'),
+              ],
+              columnWidths: {
                 for (var i = 0; i < columns.length; i++)
-                  i == totalLabelColumn
-                      ? 'TOTAL'
-                      : totalLabelColumn < 0 && i == 0
-                      ? 'TOTAL\n${_pdfWholeNumber(columnTotals[columns[i].key] ?? '')}'
-                      : _pdfWholeNumber(columnTotals[columns[i].key] ?? ''),
-              ],
-            ],
-            columnWidths: {
-              for (var i = 0; i < columns.length; i++)
-                i: columns[i].key == 'serial'
-                    ? const pw.FixedColumnWidth(30)
-                    : pw.FlexColumnWidth(columns[i].width),
-            },
-            headerStyle: pw.TextStyle(
-              fontSize: fontSize,
-              fontWeight: pw.FontWeight.bold,
+                  i: columns[i].key == 'serial'
+                      ? const pw.FixedColumnWidth(30)
+                      : pw.FlexColumnWidth(columns[i].width),
+              },
+              headerStyle: boldCell,
+              cellStyle: const pw.TextStyle(fontSize: fontSize),
+              textStyleBuilder: (_, _, row) => row > rows.length
+                  ? boldCell
+                  : const pw.TextStyle(fontSize: fontSize),
+              cellDecoration: (_, _, row) => row > rows.length
+                  ? const pw.BoxDecoration(color: PdfColors.grey200)
+                  : const pw.BoxDecoration(),
+              cellPadding: const pw.EdgeInsets.symmetric(
+                horizontal: 3,
+                vertical: 3,
+              ),
+              headerDecoration: const pw.BoxDecoration(
+                color: PdfColors.grey200,
+              ),
+              headerAlignment: pw.Alignment.center,
+              cellAlignment: pw.Alignment.center,
+              border: pw.TableBorder.all(width: 0.4, color: PdfColors.grey600),
             ),
-            cellStyle: pw.TextStyle(fontSize: fontSize),
-            textStyleBuilder: (_, _, row) => row == entries.length + 1
-                ? boldCell
-                : const pw.TextStyle(fontSize: fontSize),
-            cellDecoration: (_, _, row) => row == entries.length + 1
-                ? const pw.BoxDecoration(color: PdfColors.grey200)
-                : const pw.BoxDecoration(),
-            cellPadding: const pw.EdgeInsets.symmetric(
-              horizontal: 3,
-              vertical: 3,
-            ),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey200),
-            headerAlignment: pw.Alignment.center,
-            cellAlignment: pw.Alignment.center,
-            border: pw.TableBorder.all(width: 0.4, color: PdfColors.grey600),
-          ),
-        ],
-      ),
-    );
+          ],
+        ),
+      );
+      offset += rows.length;
+    }
     return document.save();
   }
 

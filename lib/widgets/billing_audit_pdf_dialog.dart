@@ -14,6 +14,7 @@ class BillingAuditPdfDialog extends StatefulWidget {
   final DateTime? periodTo;
   final String? selectedSector;
   final String? selectedLocality;
+  final String? employeeName;
   const BillingAuditPdfDialog({
     super.key,
     required this.entries,
@@ -24,6 +25,7 @@ class BillingAuditPdfDialog extends StatefulWidget {
     this.periodTo,
     this.selectedSector,
     this.selectedLocality,
+    this.employeeName,
   });
 
   @override
@@ -67,6 +69,7 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
         selectedColumnKeys: _selected,
         filterSummary: widget.filterSummary,
         selectedSector: widget.selectedSector,
+        employeeName: widget.employeeName,
         periodChecks: _checks,
         periodFrom: widget.periodFrom,
         periodTo: widget.periodTo,
@@ -75,6 +78,7 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
         widget.entries,
         selectedSector: widget.selectedSector,
         selectedLocality: widget.selectedLocality,
+        employeeName: widget.employeeName,
       );
       final bool completed;
       if (print) {
@@ -123,7 +127,7 @@ class _BillingAuditPdfDialogState extends State<BillingAuditPdfDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Export all ${widget.entries.length} filtered connections in the current sort order.',
+                'Export all ${widget.entries.length} filtered connections, grouped by sector. Current sort order is kept within each sector.',
               ),
               const SizedBox(height: 8),
               Text(

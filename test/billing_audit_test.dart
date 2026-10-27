@@ -976,7 +976,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         find.text(
-          'Export all 1 filtered connections in the current sort order.',
+          'Export all 1 filtered connections, grouped by sector. Current sort order is kept within each sector.',
         ),
         findsOneWidget,
       );

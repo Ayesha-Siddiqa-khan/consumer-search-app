@@ -244,6 +244,112 @@ void main() {
   });
 
   test(
+    'combined employee PDF keeps standard pages with sector subtotals and a final grand total',
+    () async {
+      final rows = buildBillingAudit(
+        consumers: [
+          for (var i = 0; i < 82; i++)
+            {
+              'connection_no': 'C$i',
+              'consumer_name': 'Consumer $i',
+              'sector': i < 80
+                  ? 'Alpha Sector With A Long Name'
+                  : 'Beta Sector With A Long Name',
+              'rate_type': 'DOMESTIC',
+            },
+        ],
+        bills: [
+          for (var i = 0; i < 82; i++)
+            BillHistory(
+              connectionNo: 'C$i',
+              billNo: '1',
+              billType: 'Regular',
+              billingPeriod: '01/07/2026 - 31/12/2026',
+              waterFee: '2400',
+              totalBill: '2400',
+              status: 'Un-Paid',
+            ).toMap(),
+        ],
+        asOf: DateTime(2026, 10, 27),
+      );
+      final bytes = await ExportService.instance.generateBillingAuditPdf(
+        entries: rows,
+        selectedColumnKeys: ExportService.defaultBillingAuditPdfColumns,
+        employeeName: 'MUHAMMAD KASHIF / MUHAMMAD SHAHID',
+        selectedSector: List.filled(
+          25,
+          'Very long selected sector name',
+        ).join(', '),
+        periodFrom: DateTime(2026, 7, 1),
+        periodTo: DateTime(2026, 12, 31),
+      );
+      await pdfrxInitialize();
+      final doc = await PdfDocument.openData(bytes);
+      try {
+        final pages = [
+          for (final page in doc.pages) (await page.loadText())!.fullText,
+        ];
+        expect(pages.length, greaterThanOrEqualTo(3));
+        expect(
+          doc.pages.every((page) => (page.width - 1190.55).abs() < 1),
+          isTrue,
+        );
+        expect(
+          pages.first,
+          contains('Employee: MUHAMMAD KASHIF / MUHAMMAD SHAHID'),
+        );
+        expect(pages.first, isNot(contains('Very long selected sector name')));
+        expect(
+          RegExp('Water Fees Shortfall').allMatches(pages.join(' ')).length,
+          1,
+        );
+        for (final page in pages.take(pages.length - 1)) {
+          expect(page, contains('Sector: Alpha Sector With A Long Name'));
+          expect(page, isNot(contains('Sector: Beta Sector')));
+          expect(page, isNot(contains('GRAND')));
+        }
+        expect(pages.last, contains('Sector: Beta Sector With A Long Name'));
+        expect(pages.last, contains('SUBTOTAL'));
+        expect(pages.last, contains('GRAND'));
+        expect(pages.last, contains('196,800'));
+        expect(pages.last, contains('82'));
+        expect(pages.join(' '), contains('192,000'));
+        if (Platform.environment['AUDIT_EMPLOYEE_PREVIEW'] == '1') {
+          await File('scratch/employee-sector-preview.pdf').writeAsBytes(bytes);
+          for (final index in [0, doc.pages.length - 1]) {
+            final page = doc.pages[index];
+            final rendered = await page.render(
+              fullWidth: 1800,
+              fullHeight: 1800 * page.height / page.width,
+            );
+            final image = await rendered!.createImage();
+            try {
+              final png = await image.toByteData(
+                format: ui.ImageByteFormat.png,
+              );
+              await File(
+                'scratch/employee-sector-preview-$index.png',
+              ).writeAsBytes(png!.buffer.asUint8List());
+            } finally {
+              image.dispose();
+              rendered.dispose();
+            }
+          }
+        }
+      } finally {
+        await doc.dispose();
+      }
+      expect(
+        ExportService.billingAuditPdfFileName(
+          rows,
+          employeeName: 'MUHAMMAD KASHIF / MUHAMMAD SHAHID',
+        ),
+        startsWith('MUHAMMAD KASHIF _ MUHAMMAD SHAHID_'),
+      );
+    },
+  );
+
+  test(
     'all selectable columns can be exported together with session notes and totals',
     () async {
       final rows = sample();
