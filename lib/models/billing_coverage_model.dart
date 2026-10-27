@@ -178,7 +178,7 @@ BillingCoverage buildBillingCoverage({
       undated.add(number);
       continue;
     }
-    // One-day, zero-water arrears adjustments do not establish a billing month.
+    // One-day zero-water entries establish presence above, but never a fee or rate.
     if (range.first == range.last && fee == 0) continue;
     final start = range.first.year * 12 + range.first.month - 1;
     final end = range.last.year * 12 + range.last.month - 1;

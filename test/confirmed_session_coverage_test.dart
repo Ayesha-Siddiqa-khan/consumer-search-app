@@ -15,6 +15,8 @@ List<Map<String, Object?>> source(
   bool january = true,
   bool quarter = false,
   String replacement = '5986238',
+  bool replacementBill = true,
+  bool datedArrears = false,
 }) => [
   for (final row in [
     ('5025849', 'Regular', '01/07/2025 - 31/07/2025', '400', '2640', '3040'),
@@ -22,10 +24,12 @@ List<Map<String, Object?>> source(
     ('5242493', 'Regular', '01/09/2025 - 30/09/2025', '400', '3480', '3880'),
     if (quarter)
       ('5407129', 'Regular', '01/10/2025 - 31/12/2025', '1200', '0', '1200'),
-    (replacement, 'Arrears', '26/01/2026 - 26/01/2026', '0', '2400', '2400'),
+    if (replacementBill)
+      (replacement, 'Arrears', '26/01/2026 - 26/01/2026', '0', '2400', '2400'),
     if (january)
       ('6130884', 'Regular', '01/01/2026 - 30/06/2026', '2400', '2640', '5040'),
-    ('6652296', 'Arrears', '11/06/2026 - 11/06/2026', '0', '2400', '2400'),
+    if (datedArrears)
+      ('6652296', 'Arrears', '11/06/2026 - 11/06/2026', '0', '2400', '2400'),
     ('6853018', 'Regular', '01/07/2026 - 31/12/2026', '2400', '5280', '7680'),
   ])
     BillHistory(
@@ -56,6 +60,96 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   });
+
+  test(
+    'paid June 30 arrears bill fills January-June in filters and history without changing money',
+    () {
+      final bills = source(
+        '12020222',
+        january: false,
+        quarter: true,
+        replacementBill: false,
+      );
+      bills.add(
+        BillHistory(
+          connectionNo: '12020222',
+          billNo: '6897944',
+          billType: 'Arrears',
+          billingPeriod: '30/06/2026 - 30/06/2026',
+          waterFee: '0',
+          arrears: '2500',
+          totalBill: '2500',
+          status: 'Paid',
+          amountReceived: '2500',
+          receiveDate: '21/08/2026',
+        ).toMap(),
+      );
+      final before = jsonEncode(bills);
+      final e = audit('12020222', bills);
+      final check = checkAuditPeriod(
+        e.periodBills,
+        DateTime(2026, 1, 1),
+        DateTime(2026, 6, 30),
+      );
+      expect(check.present, isTrue);
+      expect(check.completeSessions, 1);
+      expect(check.details, contains('6897944'));
+      expect(check.details, contains('30/06/2026'));
+      expect(
+        e.coverage!.missingPeriods.any(
+          (gap) => gap.start == DateTime.utc(2026, 1, 1),
+        ),
+        isFalse,
+      );
+      expect(
+        e.coverage!.estimatedMissingFeeBetween(
+          DateTime.utc(2026, 1, 1),
+          DateTime.utc(2026, 6, 30),
+        ),
+        0,
+      );
+      expect(e.coverage!.shortFees, isEmpty);
+      expect(e.waterFee, 480000);
+      expect(e.received, 250000);
+      expect(jsonEncode(bills), before);
+    },
+  );
+
+  test(
+    'any dated entry maps to its own half-year, independent of payment or water fee',
+    () {
+      for (final period in [
+        '15/03/2026 - 15/03/2026',
+        '02/01/2026 - 30/06/2026',
+        '30/06/2026 - 30/06/2026',
+        '31/12/2026 - 31/12/2026',
+      ]) {
+        for (final status in ['Paid', 'Un-Paid', 'Expired']) {
+          final e = audit('ANY', [
+            BillHistory(
+              connectionNo: 'ANY',
+              billNo: 'DATED',
+              billType: 'Arrears',
+              billingPeriod: period,
+              waterFee: '0',
+              totalBill: '2500',
+              status: status,
+            ).toMap(),
+          ]);
+          final july = period.startsWith('31/12');
+          final check = checkAuditPeriod(
+            e.periodBills,
+            DateTime(2026, 1, 1),
+            DateTime(2026, 12, 31),
+          );
+          expect(check.completeSessions, 1);
+          expect(check.sessions.first.complete, !july);
+          expect(check.sessions.last.complete, july);
+          expect(e.coverage!.shortFees, isEmpty);
+        }
+      }
+    },
+  );
 
   test(
     'confirmed replacement fills July-Dec 2025 once without changing raw data or money',
@@ -129,7 +223,12 @@ void main() {
       expect(otherCheck.confirmations, isEmpty);
       final actualMissing = audit(
         '13010040',
-        source('13010040', january: false, quarter: true),
+        source(
+          '13010040',
+          january: false,
+          quarter: true,
+          replacementBill: false,
+        ),
       );
       final missing = checkAuditPeriod(
         actualMissing.periodBills,
@@ -138,7 +237,10 @@ void main() {
       );
       expect(missing.completeSessions, 2);
       expect(missing.missingSessionLabels, 'Jan-Jun 2026');
-      final multiple = audit('13010023', source('13010023', january: false));
+      final multiple = audit(
+        '13010023',
+        source('13010023', january: false, replacementBill: false),
+      );
       expect(
         checkAuditPeriod(
           multiple.periodBills,

@@ -216,7 +216,10 @@ void main() {
           waterFee: '0',
         ).toMap(),
       ]);
-      expect(e.periodBills, isEmpty);
+      expect(
+        checkAuditPeriod(e.periodBills, DateTime(2026, 7, 1), to).present,
+        isTrue,
+      );
     },
   );
 

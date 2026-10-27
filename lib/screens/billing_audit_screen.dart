@@ -560,7 +560,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
         ),
         const SizedBox(height: 12),
         const Text(
-          'Dates check imported billing periods, not issue/due/payment dates. Calendar half-years are January–June and July–December. The July, August, September and October–December 2025 bills together count as one July–December session. Only the chosen dates are checked for a partial session. Missing records are not added to payable amounts. Account totals remain unchanged; other audit filters still apply.',
+          'Dates check imported billing periods, not issue/due/payment dates. Calendar half-years are January–June and July–December. A dated bill within a half-year, including a one-day arrears bill, establishes that session. The July, August, September and October–December 2025 bills together count as one July–December session. Only the chosen dates are checked for a partial session. Missing records are not added to payable amounts. Account totals remain unchanged; other audit filters still apply.',
         ),
       ],
     ),

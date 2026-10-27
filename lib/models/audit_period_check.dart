@@ -1,5 +1,3 @@
-import 'bill_amount.dart';
-
 /// Evidence comes from active imported history, after superseded bills are removed.
 class AuditBillPeriod {
   final String billNo;
@@ -9,35 +7,59 @@ class AuditBillPeriod {
   const AuditBillPeriod(this.billNo, this.start, this.end, {this.confirmation});
 }
 
-/// This user-confirmed exception establishes coverage only, never a new charge.
-/// Scope it to the exact connection/bill; other arrears entries are not evidence.
+/// Shared presence evidence for session filters and full-history coverage.
+/// Session date mappings never change recorded fees, receipts or balances.
 List<AuditBillPeriod> resolveAuditBillPeriods(
   List<Map<String, Object?>> bills,
   Map<String, List<DateTime>> periods,
-) => [
-  for (final bill in bills)
-    if ('${bill['connection_no']}'.trim().toUpperCase() == '13010340' &&
-        '${bill['bill_no']}'.trim() == '5986238' &&
-        '${bill['bill_type']}'.toLowerCase().trim() == 'arrears')
-      AuditBillPeriod(
-        '5986238',
-        DateTime(2025, 7, 1),
-        DateTime(2025, 12, 31),
-        confirmation:
-            'Confirmed replacement: connection 13010340, bill 5986238 covers 01/07/2025 - 31/12/2025. Recorded period: ${bill['billing_period']}. Original Water Fee and account totals are unchanged.',
-      )
-    else if (!((periods['${bill['billing_period']}'] ?? []).length == 2 &&
-        periods['${bill['billing_period']}']!.first ==
-            periods['${bill['billing_period']}']!.last &&
-        auditAmountInPaisa(bill['water_fee']) == 0))
-      AuditBillPeriod(
-        '${bill['bill_no'] ?? ''}',
-        (periods['${bill['billing_period']}'] ?? []).firstOrNull,
-        (periods['${bill['billing_period']}'] ?? []).length == 2
-            ? periods['${bill['billing_period']}']!.last
-            : null,
-      ),
-];
+) => [for (final bill in bills) _resolveBillPeriod(bill, periods)];
+
+AuditBillPeriod _resolveBillPeriod(
+  Map<String, Object?> bill,
+  Map<String, List<DateTime>> periods,
+) {
+  final number = '${bill['bill_no'] ?? ''}';
+  if ('${bill['connection_no']}'.trim().toUpperCase() == '13010340' &&
+      number.trim() == '5986238' &&
+      '${bill['bill_type']}'.toLowerCase().trim() == 'arrears') {
+    return AuditBillPeriod(
+      number,
+      DateTime(2025, 7, 1),
+      DateTime(2025, 12, 31),
+      confirmation:
+          'Confirmed replacement: connection 13010340, bill 5986238 covers 01/07/2025 - 31/12/2025. Recorded period: ${bill['billing_period']}. Original Water Fee and account totals are unchanged.',
+    );
+  }
+  final range = periods['${bill['billing_period']}'] ?? [];
+  if (range.length != 2 || range.first.isAfter(range.last)) {
+    return AuditBillPeriod(number, range.firstOrNull, null);
+  }
+  final start = range.first, end = range.last;
+  final sessionMonth = start.month <= 6 ? 1 : 7;
+  final sessionStart = DateTime.utc(start.year, sessionMonth);
+  final sessionEnd = DateTime.utc(start.year, sessionMonth + 6, 0);
+  final sameSession =
+      start.year == end.year && (start.month <= 6) == (end.month <= 6);
+  final wholeMonths =
+      start.day == 1 && end.day == DateTime.utc(end.year, end.month + 1, 0).day;
+  // The 2025 split issues still need July + August + September + Oct-Dec.
+  final split2025 = start.year == 2025 && sessionMonth == 7 && wholeMonths;
+  if (sameSession &&
+      !split2025 &&
+      (start.month != sessionMonth ||
+          start.day != 1 ||
+          end.month != sessionMonth + 5 ||
+          end.day != sessionEnd.day)) {
+    return AuditBillPeriod(
+      number,
+      sessionStart,
+      sessionEnd,
+      confirmation:
+          'Session date mapping: bill $number, recorded period ${bill['billing_period']}, counts in ${auditDateLabel(sessionStart)} - ${auditDateLabel(sessionEnd)}. Recorded amounts are unchanged.',
+    );
+  }
+  return AuditBillPeriod(number, start, end);
+}
 
 String auditDateLabel(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
