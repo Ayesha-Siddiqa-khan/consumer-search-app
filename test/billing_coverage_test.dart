@@ -440,7 +440,7 @@ void main() {
       );
       expect(
         tester.widget<DataTable>(find.byType(DataTable)).sortColumnIndex,
-        13,
+        14,
       );
       await tester.ensureVisible(find.text('Total missing amount'));
       await tester.pumpAndSettle();
@@ -489,7 +489,7 @@ void main() {
       expect(find.text('Result / review'), findsOneWidget);
       expect(
         tester.widget<DataTable>(find.byType(DataTable)).sortColumnIndex,
-        10,
+        11,
       );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());

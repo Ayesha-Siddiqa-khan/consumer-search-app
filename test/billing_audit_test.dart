@@ -689,10 +689,10 @@ void main() {
           findsNothing,
         );
         final table = tester.widget<DataTable>(find.byType(DataTable));
-        expect(table.columns.length, 16);
-        expect(table.columns[13].headingRowAlignment, MainAxisAlignment.center);
+        expect(table.columns.length, 17);
+        expect(table.columns[14].headingRowAlignment, MainAxisAlignment.center);
         for (final row in table.rows) {
-          final cell = row.cells[13].child;
+          final cell = row.cells[14].child;
           expect(cell, isA<Center>());
           final count = find.descendant(
             of: find.byWidget(cell),
@@ -963,7 +963,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(
         tester.widget<DataTable>(find.byType(DataTable)).sortColumnIndex,
-        1,
+        2,
       );
       await tester.tap(
         find.widgetWithText(DropdownButtonFormField<String>, 'All results'),

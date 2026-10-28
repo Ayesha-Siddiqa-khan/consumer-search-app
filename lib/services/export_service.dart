@@ -1451,7 +1451,7 @@ class ExportService {
         : columns.length > 5
         ? PdfPageFormat.a4.landscape
         : PdfPageFormat.a4;
-    const fontSize = 9.0;
+    const fontSize = 10.0;
     final boldCell = pw.TextStyle(
       fontSize: fontSize,
       fontWeight: pw.FontWeight.bold,
@@ -1499,18 +1499,50 @@ class ExportService {
     final boldFont = PdfFont.helveticaBold(document.document);
     final unitWidth = boldFont.stringMetrics(headerLine).width;
     // Long sector lists belong in their sections, never in an oversized page.
-    if (unitWidth * 9 > size.width - 48 &&
+    if (unitWidth * fontSize > size.width - 48 &&
         size.width < PdfPageFormat.a4.landscape.width) {
       size = PdfPageFormat.a4.landscape;
     }
-    if (unitWidth * 9 > size.width - 48 &&
+    if (unitWidth * fontSize > size.width - 48 &&
         size.width < PdfPageFormat.a3.landscape.width) {
       size = PdfPageFormat.a3.landscape;
     }
     final headerFontSize = ((size.width - 48) / unitWidth)
-        .clamp(9.0, 12.0)
+        .clamp(fontSize, 12.0)
         .toDouble();
     var offset = 0;
+    final regularFont = PdfFont.helvetica(document.document);
+    final widths = <String, double>{};
+    for (final column in columns) {
+      if (column.key == 'serial') continue;
+      if (columnTotals.containsKey(column.key)) {
+        var width = 40.0;
+        for (final word in column.label.split(RegExp(r'\s+'))) {
+          final measured = boldFont.stringMetrics(word).width * fontSize + 6;
+          if (measured > width) width = measured;
+        }
+        for (final value in [
+          columnTotals[column.key]!,
+          ...entries.map((e) => cell(e, column)),
+        ]) {
+          final measured =
+              regularFont.stringMetrics(_pdfWholeNumber(value)).width *
+                  fontSize +
+              6;
+          if (measured > width) width = measured;
+        }
+        widths[column.key] = width;
+      } else {
+        widths[column.key] = switch (column.key) {
+          'connection' => 78,
+          'consumer' => 145,
+          'father' => 125,
+          'address' => 145,
+          'sector' || 'locality' => 115,
+          _ => column.width * 75,
+        };
+      }
+    }
     for (var groupIndex = 0; groupIndex < names.length; groupIndex++) {
       final name = names[groupIndex];
       final rows = groups[name]!;
@@ -1530,7 +1562,7 @@ class ExportService {
         for (var i = 0; i < columns.length; i++)
           i: columns[i].key == 'serial'
               ? const pw.FixedColumnWidth(30)
-              : pw.FlexColumnWidth(columns[i].width),
+              : pw.FlexColumnWidth(widths[columns[i].key]!),
       };
       final headers = [
         for (final c in columns)
@@ -1636,7 +1668,7 @@ class ExportService {
                   : const pw.BoxDecoration(),
               cellPadding: const pw.EdgeInsets.symmetric(
                 horizontal: 3,
-                vertical: 3,
+                vertical: 2,
               ),
               headerDecoration: const pw.BoxDecoration(
                 color: PdfColors.grey200,

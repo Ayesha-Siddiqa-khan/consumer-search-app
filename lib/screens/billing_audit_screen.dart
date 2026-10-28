@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/billing_audit_model.dart';
 import '../models/audit_period_check.dart';
@@ -369,6 +370,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
   Future<void> _export(
     List<BillingAuditEntry> rows, {
     bool connectionsOnly = false,
+    String? connectionPrefix,
   }) async {
     if (_exporting || rows.isEmpty) return;
     setState(() => _exporting = true);
@@ -376,9 +378,11 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
       final path = connectionsOnly
           ? await ExportService.instance.exportConnectionNumbersCsv(
               connectionNumbers: rows.map((e) => e.connectionNo).toList(),
-              fileNamePrefix: _missingAmountsView
-                  ? 'Missing_Amounts_Connections'
-                  : 'Unpaid_Water_Connections',
+              fileNamePrefix:
+                  connectionPrefix ??
+                  (_missingAmountsView
+                      ? 'Missing_Amounts_Connections'
+                      : 'Unpaid_Water_Connections'),
             )
           : await ExportService.instance.exportBillingAudit(
               rows,
@@ -674,6 +678,91 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
     _page = 0;
   });
 
+  Widget _connectionMenu(
+    List<BillingAuditEntry> rows,
+    List<BillingAuditEntry> page,
+  ) => PopupMenuButton<String>(
+    tooltip: 'Export / Copy Audit Connection Numbers',
+    enabled: rows.isNotEmpty && !_exporting,
+    padding: EdgeInsets.zero,
+    constraints: const BoxConstraints(minWidth: 260),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        border: Border.all(color: AppTheme.primaryGreen),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.file_download_outlined,
+            size: 17,
+            color: AppTheme.primaryGreen,
+          ),
+          SizedBox(width: 8),
+          Text(
+            'Connection numbers',
+            style: TextStyle(color: AppTheme.primaryGreen),
+          ),
+        ],
+      ),
+    ),
+    onSelected: (action) async {
+      final selected = action.endsWith('page') ? page : rows;
+      if (action.startsWith('csv')) {
+        await _export(
+          selected,
+          connectionsOnly: true,
+          connectionPrefix: action.endsWith('page')
+              ? 'Audit_Connections_Current_Page'
+              : 'Audit_Connections_All',
+        );
+      } else {
+        final numbers = selected
+            .map((e) => e.connectionNo.trim())
+            .where((v) => v.isNotEmpty)
+            .toList();
+        try {
+          await Clipboard.setData(ClipboardData(text: numbers.join('\n')));
+        } catch (e) {
+          if (mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text('Copy failed: $e')));
+          }
+          return;
+        }
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Copied ${numbers.length} connection numbers.'),
+            ),
+          );
+        }
+      }
+    },
+    itemBuilder: (_) => [
+      PopupMenuItem(
+        value: 'csv_all',
+        child: Text('Download CSV (All ${rows.length})'),
+      ),
+      PopupMenuItem(
+        value: 'csv_page',
+        child: Text('Download CSV (Current Page: ${page.length})'),
+      ),
+      const PopupMenuDivider(),
+      PopupMenuItem(
+        value: 'copy_all',
+        child: Text('Copy All to Clipboard (${rows.length})'),
+      ),
+      PopupMenuItem(
+        value: 'copy_page',
+        child: Text('Copy Current Page (${page.length})'),
+      ),
+    ],
+  );
+
   DataColumn _column(
     String label,
     double width, {
@@ -692,7 +781,9 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
     ),
     tooltip: label,
     numeric: numeric,
-    onSort: sortable ? _sort : null,
+    onSort: sortable
+        ? (column, ascending) => _sort(column - 1, ascending)
+        : null,
     headingRowAlignment: centered ? MainAxisAlignment.center : null,
   );
 
@@ -1119,6 +1210,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                     runSpacing: 12,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      _connectionMenu(rows, rows.sublist(start, end)),
                       OutlinedButton.icon(
                         onPressed: () => showDialog<void>(
                           context: context,
@@ -1221,7 +1313,7 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                     ? 1200
                                     : constraints.maxWidth,
                                 child: DataTable(
-                                  sortColumnIndex: _sortColumn,
+                                  sortColumnIndex: _sortColumn + 1,
                                   sortAscending: _ascending,
                                   horizontalMargin: 8,
                                   columnSpacing: 8,
@@ -1249,6 +1341,15 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                         : 11,
                                   ),
                                   columns: [
+                                    const DataColumn(
+                                      label: Expanded(
+                                        child: Text(
+                                          'SR #',
+                                          style: TextStyle(fontSize: 11),
+                                        ),
+                                      ),
+                                      columnWidth: FixedColumnWidth(44),
+                                    ),
                                     _column(
                                       'Connection No.',
                                       .95,
@@ -1351,10 +1452,8 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                     ),
                                   ],
                                   rows: [
-                                    for (final entry in rows.sublist(
-                                      start,
-                                      end,
-                                    ))
+                                    for (final (index, entry)
+                                        in rows.sublist(start, end).indexed)
                                       DataRow(
                                         color: WidgetStatePropertyAll(
                                           (entry.payableBalance ?? 0) > 0
@@ -1362,6 +1461,9 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                               : null,
                                         ),
                                         cells: [
+                                          DataCell(
+                                            Text('${start + index + 1}'),
+                                          ),
                                           DataCell(
                                             CopyableText(
                                               entry.connectionNo,

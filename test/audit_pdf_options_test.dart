@@ -435,7 +435,7 @@ void main() {
         r'/F\d+\s+(\d+(?:\.\d+)?)\s+Tf',
       ).allMatches(streams).map((m) => double.parse(m[1]!)).toList();
       expect(sizes, isNotEmpty);
-      expect(sizes.every((size) => size >= 9), isTrue);
+      expect(sizes.every((size) => size >= 10), isTrue);
       expect(sizes, containsAll([20.0, 12.0]));
       await pdfrxInitialize();
       final doc = await PdfDocument.openData(bytes);
