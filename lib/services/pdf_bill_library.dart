@@ -184,6 +184,7 @@ class PdfBillLibrary {
   Future<({int imported, int skipped})> importPdfs(
     List<String> paths, {
     bool replaceAll = false,
+    bool preserveVersions = false,
     String? replaceId,
     String? csvPath,
     void Function(String)? progress,
@@ -225,7 +226,7 @@ class PdfBillLibrary {
           );
         }
         final name = p.basename(path);
-        if (!names.add(name.toLowerCase())) {
+        if (!names.add(name.toLowerCase()) && !preserveVersions) {
           throw FormatException(
             'Two selected PDFs have the same filename: $name. Import them separately.',
           );
@@ -245,7 +246,7 @@ class PdfBillLibrary {
           continue;
         }
         if (replaceId != null) replaced.add(replaceId);
-        if (!replaceAll) {
+        if (!replaceAll && !preserveVersions) {
           replaced.addAll(
             existing
                 .where(
@@ -276,6 +277,13 @@ class PdfBillLibrary {
         staged.add(row);
         progress?.call('Copying $name (${staged.length}/${paths.length})');
         await File(path).copy(filePath(id));
+        if (preserveVersions &&
+            '${await sha256.bind(File(filePath(id)).openRead()).first}' !=
+                digest) {
+          throw FormatException(
+            'Source changed while copying $name. Import it again.',
+          );
+        }
         final document = await PdfDocument.openFile(
           filePath(id),
           passwordProvider: () async => null,

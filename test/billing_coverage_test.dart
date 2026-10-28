@@ -442,6 +442,8 @@ void main() {
         tester.widget<DataTable>(find.byType(DataTable)).sortColumnIndex,
         13,
       );
+      await tester.ensureVisible(find.text('Total missing amount'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Total missing amount'));
       await tester.pumpAndSettle();
       expect(

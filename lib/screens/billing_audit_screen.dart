@@ -7,6 +7,7 @@ import '../services/database_service.dart';
 import '../services/export_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/bill_history_dialog.dart';
+import '../widgets/bill_print_evidence_dialog.dart';
 import '../widgets/billing_audit_pdf_dialog.dart';
 import '../widgets/copyable_text.dart';
 import '../widgets/searchable_select_field.dart';
@@ -1118,6 +1119,17 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                     runSpacing: 12,
                     crossAxisAlignment: WrapCrossAlignment.center,
                     children: [
+                      OutlinedButton.icon(
+                        onPressed: () => showDialog<void>(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (_) => const BillPrintArchiveDialog(),
+                        ),
+                        icon: const Icon(Icons.folder_copy_outlined),
+                        label: const Text(
+                          'Printed bill evidence / import folder',
+                        ),
+                      ),
                       ElevatedButton.icon(
                         onPressed: rows.isEmpty || _exporting
                             ? null
@@ -1615,44 +1627,82 @@ class _BillingAuditScreenState extends State<BillingAuditScreen> {
                                               ),
                                             ),
                                           DataCell(
-                                            IconButton(
-                                              tooltip: 'Open bill history',
-                                              padding: EdgeInsets.zero,
-                                              constraints: const BoxConstraints(
-                                                minWidth: 32,
-                                                minHeight: 36,
-                                              ),
-                                              icon: const Icon(
-                                                Icons.history,
-                                                size: 20,
-                                              ),
-                                              onPressed: () async {
-                                                var historyChanged = false;
-                                                await BillHistoryDialog.show(
-                                                  context: context,
-                                                  connectionNo:
-                                                      entry.connectionNo,
-                                                  database: widget.database,
-                                                  auditPeriodFrom:
-                                                      _checkingPeriod
-                                                      ? _periodFrom
-                                                      : null,
-                                                  auditPeriodTo: _checkingPeriod
-                                                      ? _periodTo
-                                                      : null,
-                                                  auditBillGroup: _billGroup,
-                                                  onHistoryChanged: () =>
-                                                      historyChanged = true,
-                                                );
-                                                if (mounted) {
-                                                  await _load(
-                                                    preservePosition: true,
-                                                    connectionNo: historyChanged
-                                                        ? null
-                                                        : entry.connectionNo,
-                                                  );
-                                                }
-                                              },
+                                            Wrap(
+                                              children: [
+                                                IconButton(
+                                                  tooltip: 'Open bill history',
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                        minWidth: 32,
+                                                        minHeight: 36,
+                                                      ),
+                                                  icon: const Icon(
+                                                    Icons.history,
+                                                    size: 20,
+                                                  ),
+                                                  onPressed: () async {
+                                                    var historyChanged = false;
+                                                    await BillHistoryDialog.show(
+                                                      context: context,
+                                                      connectionNo:
+                                                          entry.connectionNo,
+                                                      database: widget.database,
+                                                      auditPeriodFrom:
+                                                          _checkingPeriod
+                                                          ? _periodFrom
+                                                          : null,
+                                                      auditPeriodTo:
+                                                          _checkingPeriod
+                                                          ? _periodTo
+                                                          : null,
+                                                      auditBillGroup:
+                                                          _billGroup,
+                                                      onHistoryChanged: () =>
+                                                          historyChanged = true,
+                                                    );
+                                                    if (mounted) {
+                                                      await _load(
+                                                        preservePosition: true,
+                                                        connectionNo:
+                                                            historyChanged
+                                                            ? null
+                                                            : entry
+                                                                  .connectionNo,
+                                                      );
+                                                    }
+                                                  },
+                                                ),
+                                                IconButton(
+                                                  tooltip:
+                                                      'View printed bill PDF evidence',
+                                                  padding: EdgeInsets.zero,
+                                                  constraints:
+                                                      const BoxConstraints(
+                                                        minWidth: 32,
+                                                        minHeight: 36,
+                                                      ),
+                                                  icon: const Icon(
+                                                    Icons
+                                                        .picture_as_pdf_outlined,
+                                                    size: 20,
+                                                  ),
+                                                  onPressed: () => showDialog<void>(
+                                                    context: context,
+                                                    builder: (_) =>
+                                                        BillPrintEvidenceDialog(
+                                                          connectionNo: entry
+                                                              .connectionNo,
+                                                          consumerName: entry
+                                                              .consumerName,
+                                                          from: _coverageFrom,
+                                                          to: _coverageTo,
+                                                          database:
+                                                              widget.database,
+                                                        ),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ],
