@@ -74,6 +74,32 @@ void main() {
   Future<File> file(String name, List<List<dynamic>> rows) async =>
       File('${folder.path}/$name').writeAsString(csv.encode(rows));
 
+  test('import panel counts survive later imports and distinguish bills from connections', () async {
+    final history = await file('history.csv', [headers, row(), row(bill: '11')]);
+    await importer.importBillHistoryFiles([history], isHistory: true, asOf: DateTime(2026, 10, 20));
+    final daily = await file('daily.csv', [
+      headers,
+      row(status: 'Paid', received: '2400', date: '21/10/2026'),
+      row(connection: '002-B', bill: '12'),
+    ]);
+    await importer.importBillHistoryFiles([daily], asOf: DateTime(2026, 10, 21));
+    final stats = await DatabaseService.forTesting(db).getStats();
+    expect(stats['historyConnections'], 2);
+    expect(stats['billHistoryCount'], 3);
+    final runs = stats['latestImports'] as Map;
+    expect(runs['history']['connections'], 1);
+    expect(runs['history']['inserted'], 2);
+    expect(runs['daily']['connections'], 2);
+    expect(runs['daily']['inserted'], 1);
+    expect(runs['daily']['updated'], 1);
+    expect(runs['daily']['held'], 0);
+    await importer.importBillHistoryFiles([daily], asOf: DateTime(2026, 10, 21));
+    final repeated = (await service.getStats())['latestImports'] as Map;
+    expect(repeated['daily']['unchanged'], 2);
+    expect(repeated['daily']['updated'], 0);
+    expect(repeated['history']['inserted'], 2);
+  });
+
   test(
     'any filename, repeated copies, exact identities and missing daily fields are safe',
     () async {

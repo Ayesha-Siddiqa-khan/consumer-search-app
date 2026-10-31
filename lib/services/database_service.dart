@@ -893,6 +893,9 @@ class DatabaseService {
           'unchanged': report.unchanged,
           'held': report.held,
           'duplicate_rows': report.duplicateRows,
+          'connections': incoming.map((item) => item.bill.connectionNo.trim().toUpperCase()).toSet().length,
+          'consumers_updated': report.consumersUpdated,
+          'superseded': report.superseded,
         }),
         'issues': jsonEncode(report.issues),
       });
@@ -1482,6 +1485,21 @@ class DatabaseService {
     } catch (_) {}
 
     final billHistoryCount = await getBillHistoryCount();
+    final historyConnections = Sqflite.firstIntValue(await db.rawQuery(
+      "SELECT COUNT(DISTINCT UPPER(TRIM(connection_no))) FROM bill_history WHERE TRIM(connection_no) <> ''",
+    )) ?? 0;
+    final latestImports = <String, Map<String, dynamic>>{};
+    for (final kind in ['history', 'daily']) {
+      final runs = await db.query('data_import_runs',
+          where: 'kind = ?', whereArgs: [kind], orderBy: 'id DESC', limit: 1);
+      if (runs.isNotEmpty) {
+        latestImports[kind] = {
+          ...jsonDecode(runs.single['summary'] as String) as Map<String, dynamic>,
+          'created_at': runs.single['created_at'],
+        };
+      }
+    }
+
 
     // Every KPI uses the same set of distinct bills from the latest upload.
     await _ensureBillHistoryTable(db);
@@ -1558,6 +1576,8 @@ class DatabaseService {
       'commercialRegular': commercialRegularCount,
       'privateSocietiesRegular': privateRegularCount,
       'billHistoryCount': billHistoryCount,
+      'historyConnections': historyConnections,
+      'latestImports': latestImports,
       'fileSizeBytes': fileSizeBytes,
       'dbPath': dbPath,
       ...billing,

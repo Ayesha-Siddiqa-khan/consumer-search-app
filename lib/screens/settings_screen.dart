@@ -137,6 +137,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
+  Widget _importCounts(String kind) {
+    final run = (_stats?['latestImports'] as Map?)?[kind] as Map?;
+    final number = NumberFormat.decimalPattern('en');
+    String count(String key) => number.format(run?[key] ?? 0);
+    return SizedBox(
+      width: 270,
+      child: Padding(
+        padding: const EdgeInsets.only(top: 6, left: 4),
+        child: SelectableText(
+          [
+            if (kind == 'history')
+              'Stored history: ${number.format(_stats?['historyConnections'] ?? 0)} connections | ${number.format(_stats?['billHistoryCount'] ?? 0)} bills',
+            if (run != null) ...[
+              'Latest import: ${run['connections'] == null ? 'connection count not recorded' : '${count('connections')} connections'}',
+              '${count('inserted')} new bills | ${count('updated')} updated bills',
+              '${count('unchanged')} unchanged | ${count('held')} held for review',
+              if (run['consumers_updated'] != null)
+                '${count('consumers_updated')} consumer records updated',
+            ] else
+              'No saved ${kind == 'history' ? 'history import' : 'daily update'} report.',
+          ].join('\n'),
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+    );
+  }
+
   Future<void> _confirmClearDatabase() async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1036,6 +1063,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                                           ),
                                         ),
+                                      _importCounts('history'),
                                     ],
                                   ),
                                   Column(
@@ -1063,6 +1091,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                             style: TextStyle(fontSize: 11, color: Colors.grey.shade400),
                                           ),
                                         ),
+                                      _importCounts('daily'),
                                     ],
                                   ),
                                   OutlinedButton.icon(icon: const Icon(Icons.fact_check), label: const Text('Review Last Import'), onPressed: _reviewLastImport),
