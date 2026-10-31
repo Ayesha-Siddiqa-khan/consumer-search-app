@@ -796,9 +796,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        'Source: ${_stats?['billingSource'] ?? 'No bills imported'}. Arrears are already included in demand.',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                      ExpansionTile(
+                        title: const Text('Show source files', style: TextStyle(fontSize: 12)),
+                        initiallyExpanded: false,
+                        tilePadding: EdgeInsets.zero,
+                        childrenPadding: const EdgeInsets.only(bottom: 8),
+                        expandedCrossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Source: ${_stats?['billingSource'] ?? 'No bills imported'}. Arrears are already included in demand.',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 12),
 
